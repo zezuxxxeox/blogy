@@ -90,6 +90,7 @@ button {
   width: min(52vw, 420px);
   aspect-ratio: 544 / 223;
   overflow: hidden;
+  transform: translateY(-20vh);
 }
 
 .splash-wordmark img {
@@ -161,6 +162,10 @@ button {
   grid-template-columns: auto auto;
   align-items: center;
   gap: 8px;
+}
+
+.header-actions:empty {
+  display: none;
 }
 
 .app-shell {
@@ -445,7 +450,8 @@ select:focus {
   box-shadow: none;
 }
 
-.primary-button.full {
+.primary-button.full,
+.secondary-button.full {
   width: 100%;
   min-height: 52px;
   margin-top: 4px;
@@ -454,6 +460,28 @@ select:focus {
 
 .button-row {
   flex-wrap: wrap;
+}
+
+.source-actions,
+.result-actions {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+
+.source-button {
+  justify-content: center;
+  width: 100%;
+  text-decoration: none;
+}
+
+.result-actions {
+  justify-content: flex-end;
+  margin: 14px 0 0;
+}
+
+.result-actions > button {
+  min-width: 132px;
 }
 
 .text-link {
@@ -922,6 +950,13 @@ select:focus {
   line-height: 1.95;
 }
 
+.blog-preview .post-tags {
+  margin: -4px 0 22px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
 .blog-preview figure {
   margin: 20px 0;
 }
@@ -1260,6 +1295,15 @@ select:focus {
 
   .view-tabs .tab {
     flex: 1 1 0;
+  }
+
+  .result-actions {
+    flex-direction: column;
+    margin: 12px;
+  }
+
+  .result-actions > button {
+    width: 100%;
   }
 
   .notice,

@@ -84,6 +84,32 @@ button {
   gap: 10px;
 }
 
+.header-actions:empty {
+  display: none;
+}
+
+.source-actions,
+.result-actions {
+  display: flex;
+  gap: 10px;
+  margin: 8px 0 12px;
+}
+
+.source-button {
+  justify-content: center;
+  width: 100%;
+  text-decoration: none;
+}
+
+.result-actions {
+  justify-content: flex-end;
+  margin: 14px 0 0;
+}
+
+.result-actions > button {
+  min-width: 132px;
+}
+
 .status-pill {
   display: inline-flex;
   align-items: center;
@@ -269,7 +295,8 @@ select:focus {
   opacity: 0.55;
 }
 
-.primary-button.full {
+.primary-button.full,
+.secondary-button.full {
   width: 100%;
   min-height: 48px;
 }
@@ -534,6 +561,13 @@ select:focus {
   color: #273341;
 }
 
+.blog-preview .post-tags {
+  margin: -4px 0 18px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.6;
+}
+
 .blog-preview figure {
   margin: 18px 0;
 }
@@ -713,14 +747,16 @@ select:focus {
 
   .header-actions,
   .view-tabs,
-  .button-row {
+  .button-row,
+  .result-actions {
     width: 100%;
     flex-wrap: wrap;
   }
 
   .header-actions > *,
   .view-tabs > *,
-  .button-row > button {
+  .button-row > button,
+  .result-actions > button {
     flex: 1 1 auto;
   }
 

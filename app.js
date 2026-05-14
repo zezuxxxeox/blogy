@@ -24,7 +24,14 @@ const state = {
     provider: "gemini",
     geminiModel: "gemini-2.5-flash",
     geminiKey: "",
-    noReference: false
+    noReference: false,
+    searchGrounding: true,
+    wordCount: 1800,
+    placeName: "",
+    verifiedFacts: "",
+    referenceWeight: "strict",
+    hashtagCount: 8,
+    keywords: ""
   }
 };
 
@@ -65,14 +72,8 @@ function bindEvents() {
     updateProviderStatus();
   });
 
-  $("#saveSettingsButton").addEventListener("click", () => {
-    state.settings.provider = $("#providerSelect").value;
-    state.settings.geminiKey = $("#geminiKey").value.trim();
-    state.settings.geminiModel = $("#geminiModel").value.trim() || "gemini-2.5-flash";
-    saveSettings();
-    updateProviderStatus();
-    showToast("✓ 설정이 저장되었습니다.");
-  });
+  $("#saveSettingsButton").addEventListener("click", () => persistSettingsFromControls(true));
+  $("#saveAllSettingsButton").addEventListener("click", () => persistSettingsFromControls(true));
 
   $("#dropzone").addEventListener("dragover", (event) => {
     event.preventDefault();
@@ -98,6 +99,27 @@ function bindEvents() {
     state.settings.noReference = $("#noReferenceToggle").checked;
     saveSettings();
     updateReferenceControls();
+  });
+
+  $("#searchGroundingToggle").addEventListener("change", () => {
+    state.settings.searchGrounding = $("#searchGroundingToggle").checked;
+    saveSettings();
+  });
+
+  $("#wordCountSelect").addEventListener("change", () => {
+    state.settings.wordCount = parseTargetWordCount();
+    saveSettings();
+  });
+
+  $("#placeName").addEventListener("input", () => {
+    state.settings.placeName = $("#placeName").value.trim();
+    saveSettings();
+    updateMapSearchLink();
+  });
+
+  $("#verifiedFacts").addEventListener("input", () => {
+    state.settings.verifiedFacts = $("#verifiedFacts").value.trim();
+    saveSettings();
   });
 
   $("#generateButton").addEventListener("click", generatePost);
@@ -133,18 +155,53 @@ function saveSettings() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state.settings));
 }
 
+function persistSettingsFromControls(showMessage = false) {
+  state.settings.provider = $("#providerSelect").value;
+  state.settings.geminiKey = $("#geminiKey").value.trim();
+  state.settings.geminiModel = $("#geminiModel").value.trim() || "gemini-2.5-flash";
+  state.settings.noReference = $("#noReferenceToggle").checked;
+  state.settings.searchGrounding = $("#searchGroundingToggle").checked;
+  state.settings.wordCount = parseTargetWordCount();
+  state.settings.placeName = $("#placeName").value.trim();
+  state.settings.verifiedFacts = $("#verifiedFacts").value.trim();
+  state.settings.referenceWeight = $("#referenceWeight").value;
+  state.settings.hashtagCount = parseHashtagCount();
+  state.settings.keywords = $("#keywordInput").value;
+  saveSettings();
+  updateProviderStatus();
+  updateReferenceControls();
+  updateMapSearchLink();
+  if (showMessage) showToast("저장이 완료되었습니다.");
+}
+
 function hydrateSettings() {
   $("#providerSelect").value = "gemini";
   $("#geminiKey").value = state.settings.geminiKey;
   $("#geminiModel").value = state.settings.geminiModel;
   $("#noReferenceToggle").checked = Boolean(state.settings.noReference);
+  $("#searchGroundingToggle").checked = state.settings.searchGrounding !== false;
+  $("#wordCountSelect").value = String(state.settings.wordCount || 1800);
+  $("#placeName").value = state.settings.placeName || "";
+  $("#verifiedFacts").value = state.settings.verifiedFacts || "";
+  $("#referenceWeight").value = state.settings.referenceWeight || "strict";
+  $("#hashtagCount").value = String(state.settings.hashtagCount ?? 8);
+  $("#keywordInput").value = state.settings.keywords || "";
   updateReferenceControls();
+  updateMapSearchLink();
 }
 
 function updateReferenceControls() {
   const noReference = $("#noReferenceToggle").checked;
   $("#referenceText").disabled = noReference;
   $("#referenceWeight").disabled = noReference;
+}
+
+function updateMapSearchLink() {
+  const query = $("#placeName")?.value.trim();
+  const href = query
+    ? `https://map.naver.com/p/search/${encodeURIComponent(query)}`
+    : "https://map.naver.com";
+  $("#naverMapSearch").href = href;
 }
 
 function updateProviderStatus() {
@@ -404,6 +461,11 @@ function parseHashtagCount() {
   return clamp(Number.isFinite(raw) ? raw : 8, 0, 30);
 }
 
+function parseTargetWordCount() {
+  const raw = Number.parseInt($("#wordCountSelect")?.value || "1800", 10);
+  return clamp(Number.isFinite(raw) ? raw : 1800, 800, 5000);
+}
+
 function renderPhotos() {
   $("#photoCount").textContent = `${state.photos.length}장`;
   if (state.photos.length) updateUploadStatus(`${state.photos.length}장 표시됨`);
@@ -466,11 +528,7 @@ async function generatePost() {
     return;
   }
 
-  state.settings.provider = $("#providerSelect").value;
-  state.settings.geminiKey = $("#geminiKey").value.trim();
-  state.settings.geminiModel = $("#geminiModel").value.trim() || "gemini-2.5-flash";
-  saveSettings();
-  updateProviderStatus();
+  persistSettingsFromControls(false);
   clearResultData();
   setView("preview");
 
@@ -517,6 +575,7 @@ function collectBrief() {
   const rawKeywords = $("#keywordInput").value.split(",").map((item) => item.trim()).filter(Boolean);
   const readyPhotos = getReadyPhotos();
   const hashtagCount = parseHashtagCount();
+  const targetWordCount = parseTargetWordCount();
   const firstPassTerms = buildDictationContextTerms(rawPrompt, rawReferences, rawKeywords);
   const prompt = rawPrompt;
   const references = rawReferences;
@@ -532,9 +591,10 @@ function collectBrief() {
   const dictationProfile = buildDictationProfile(rawPrompt, rawReferences, rawKeywords, finalPrompt, finalReferences, contextTerms);
   const referenceWeight = $("#noReferenceToggle").checked ? "balanced" : $("#referenceWeight").value;
   const inferredSectionCount = inferSectionCount(referenceAnalysis, finalReferences, finalPrompt, readyPhotos.length);
+  const wordBasedSectionCount = clamp(Math.round(targetWordCount / 450), MIN_AUTO_SECTIONS, MAX_AUTO_SECTIONS);
   const sectionCount = referenceWeight === "strict" && referenceAnalysis.outline.length
     ? clamp(referenceAnalysis.outline.length, MIN_AUTO_SECTIONS, MAX_AUTO_SECTIONS)
-    : inferredSectionCount;
+    : clamp(Math.round((inferredSectionCount + wordBasedSectionCount) / 2), MIN_AUTO_SECTIONS, MAX_AUTO_SECTIONS);
   return {
     prompt: finalPrompt,
     rawPrompt,
@@ -545,6 +605,10 @@ function collectBrief() {
     tone: $("#toneSelect").value,
     platform: $("#platformSelect").value,
     hashtagCount,
+    targetWordCount,
+    placeName: $("#placeName").value.trim(),
+    verifiedFacts: $("#verifiedFacts").value.trim(),
+    searchGrounding: $("#searchGroundingToggle").checked,
     keywords: rawKeywords.map((keyword) => normalizeDictationText(keyword, contextTerms)).filter(Boolean),
     dictationProfile,
     sectionCount,
@@ -581,23 +645,44 @@ async function generateWithGemini(brief) {
     });
   });
 
-  const response = await fetch(endpoint, {
+  const requestBody = {
+    contents: [{ role: "user", parts }],
+    generationConfig: {
+      temperature: brief.searchGrounding ? 0.38 : 0.62,
+      topP: 0.82,
+      responseMimeType: "application/json"
+    }
+  };
+
+  if (brief.searchGrounding) {
+    requestBody.tools = [{ googleSearch: {} }];
+  }
+
+  let response = await fetch(endpoint, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      contents: [{ role: "user", parts }],
-      generationConfig: {
-        temperature: 0.72,
-        topP: 0.9,
-        responseMimeType: "application/json"
-      }
-    })
+    body: JSON.stringify(requestBody)
   });
 
   setProgress(true, "AI 결과를 정리하는 중", 72);
   if (!response.ok) {
     const text = await response.text();
-    throw new Error(`Gemini API ${response.status}: ${text.slice(0, 220)}`);
+    if (brief.searchGrounding && response.status === 400) {
+      const fallbackBody = { ...requestBody };
+      delete fallbackBody.tools;
+      response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(fallbackBody)
+      });
+      if (!response.ok) {
+        const retryText = await response.text();
+        throw new Error(`Gemini API ${response.status}: ${retryText.slice(0, 220)}`);
+      }
+      showToast("검색 확인이 지원되지 않아 검증 정보 기준으로 작성합니다.");
+    } else {
+      throw new Error(`Gemini API ${response.status}: ${text.slice(0, 220)}`);
+    }
   }
 
   const payload = await response.json();
@@ -617,6 +702,7 @@ function buildGeminiPrompt(brief, photoCount) {
   const referenceBlueprint = JSON.stringify(brief.referenceAnalysis, null, 2).slice(0, 8000);
   const referenceStyleGuide = JSON.stringify(buildReferenceGenerationGuide(brief), null, 2).slice(0, 6000);
   const referenceDirective = buildReferenceDirective(brief, referenceStyleGuide);
+  const factDirective = buildFactDirective(brief);
   const dictationBlueprint = JSON.stringify(brief.dictationProfile, null, 2).slice(0, 5000);
   const photoMeta = brief.photos.slice(0, photoCount).map((photo) => ({
     id: photo.id,
@@ -631,6 +717,7 @@ function buildGeminiPrompt(brief, photoCount) {
 
   return `
 ${referenceDirective}
+${factDirective}
 너는 한국어 블로그 에디터이자 사진 편집자다. 사용자가 올린 사진, 원하는 글 프롬프트, 참고 블로그 글을 바탕으로 블로그에 바로 붙여넣을 수 있는 고품질 초안을 만들어라.
 
 중요 원칙:
@@ -722,6 +809,10 @@ ${prompt || "(없음)"}
 섹션 수: ${brief.sectionCount}
 레퍼런스 반영 강도: ${brief.referenceWeight}
 해시태그 개수: ${brief.hashtagCount}
+목표 글자수: 약 ${brief.targetWordCount}자
+장소명: ${brief.placeName || "(없음)"}
+검증된 메뉴·가격·운영정보:
+${brief.verifiedFacts || "(없음)"}
 필수 키워드: ${brief.keywords.join(", ") || "(없음)"}
 마무리 방식: 별도 CTA 없이 레퍼런스의 결말 흐름을 자연스럽게 반영
 
@@ -742,6 +833,26 @@ ${rawRef || "(없음)"}
 
 문맥 보정된 참고 블로그/메모:
   ${ref || "(없음)"}
+`.trim();
+}
+
+function buildFactDirective(brief) {
+  const searchMode = brief.searchGrounding
+    ? "Google Search grounding is enabled. Search with exact keywords built from the place name, required keywords, menu, price, hours, address, and recent blog-review terms."
+    : "Search grounding is disabled. Use only user-provided verified facts, photos, and reference text.";
+  return `
+[FACT SAFETY RULES]
+${searchMode}
+- This is likely an informational blog post. Minimize hallucination.
+- If the topic is a restaurant, cafe, shop, clinic, product, price, menu, operating hour, address, parking, reservation, or policy, use only facts found in verifiedFacts, the user's reference text, visible photo evidence, or grounded search results.
+- Never invent menu names, prices, addresses, phone numbers, opening hours, parking rules, reservation rules, brand history, awards, or promotions.
+- If a fact is not verified, omit it or write in Korean that it should be checked before visiting. Do not fill blanks with plausible guesses.
+- Use the place name as the main search keyword when available: "${brief.placeName || ""}".
+- When the prompt is short, supplement the article with patterns and common review angles from grounded search/reference material, but do not present unverified details as facts.
+- Keep the final body around ${brief.targetWordCount} Korean characters, excluding HTML tags.
+- Do not create a table of contents.
+- Put hashtags immediately after the title. Do not add a subtitle/description between the title and hashtags.
+- Return JSON only.
 `.trim();
 }
 
@@ -1533,7 +1644,7 @@ function pickContextEmoji(text, index, brief = null) {
 
 function generateLocally(brief, fallbackReason = "") {
   setProgress(true, "레퍼런스 구조를 반영해 로컬 초안 생성 중", 45);
-  const keywords = unique([...extractKeywords(`${brief.prompt}\n${brief.references}`), ...brief.keywords]).slice(0, 18);
+  const keywords = unique([...extractKeywords(`${brief.prompt}\n${brief.references}\n${brief.placeName}\n${brief.verifiedFacts}`), ...brief.keywords]).slice(0, 18);
   const title = makeLocalTitle(brief, keywords);
   const referenceParagraphs = splitParagraphs(brief.references);
   const sections = buildLocalSections(brief, referenceParagraphs, keywords);
@@ -1773,7 +1884,7 @@ function normalizeResult() {
   state.result.seo = {
     title: enforceSeoTitleFormat(state.result.seo?.title || makeLocalTitle(brief, extractKeywords(brief.prompt)), brief, extractKeywords(brief.prompt)),
     description: state.result.seo?.description || makeDescription(collectBrief(), extractKeywords(collectBrief().prompt)),
-    tags: normalizeSeoTags(state.result.seo?.tags, brief, extractKeywords(`${brief.prompt} ${brief.references}`)),
+    tags: normalizeSeoTags(state.result.seo?.tags, brief, extractKeywords(`${brief.prompt} ${brief.references} ${brief.placeName} ${brief.verifiedFacts}`)),
     slug: state.result.seo?.slug || slugify(state.result.seo?.title || "blogy")
   };
 }
@@ -1918,8 +2029,8 @@ function renderMatching() {
 function buildBlogHtml() {
   const seo = state.result.seo;
   const sections = state.result.sections;
-  const toc = sections.length > 3
-    ? `<div class="toc"><strong>목차</strong><ol>${sections.map((section) => `<li>${escapeHtml(section.title)}</li>`).join("")}</ol></div>`
+  const hashtags = (seo.tags || []).length
+    ? `<p class="post-tags">${(seo.tags || []).map((tag) => `#${escapeHtml(tag)}`).join(" ")}</p>`
     : "";
   const body = sections.map((section) => {
     const figures = section.targetPhotoIds.map((photoId) => {
@@ -1945,8 +2056,7 @@ function buildBlogHtml() {
 
   return `
     <h1>${escapeHtml(seo.title)}</h1>
-    ${seo.description ? `<p>${escapeHtml(seo.description)}</p>` : ""}
-    ${toc}
+    ${hashtags}
     ${body}
   `.trim();
 }

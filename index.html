@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BLOGY">
-    <link rel="stylesheet" href="./styles-green.css?v=26">
+    <link rel="stylesheet" href="./styles-green.css?v=29">
   </head>
   <body>
     <div class="splash-screen" aria-hidden="true">
@@ -29,8 +29,6 @@
         </h1>
       </div>
       <div class="header-actions">
-        <button class="ghost-button" id="copyHtmlButton" type="button" disabled>HTML 복사</button>
-        <button class="primary-button" id="copyRichButton" type="button" disabled>블로그용 복사</button>
       </div>
     </header>
 
@@ -58,7 +56,7 @@
             <input id="geminiKey" type="password" autocomplete="off">
           </label>
           <div class="button-row">
-            <button class="secondary-button" id="saveSettingsButton" type="button">설정 저장</button>
+            <button class="secondary-button" id="saveSettingsButton" type="button">키 저장</button>
             <a class="text-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">무료 키 만들기</a>
           </div>
           <p class="hint">키는 이 브라우저의 localStorage에만 저장됩니다. 무료 티어에서는 Google 정책상 입력 데이터가 제품 개선에 사용될 수 있습니다.</p>
@@ -116,9 +114,39 @@
               <input id="hashtagCount" type="number" min="0" max="30" value="8">
             </label>
           </div>
+          <label>
+            글자수
+            <select id="wordCountSelect">
+              <option value="1200">짧게 - 약 1,200자</option>
+              <option value="1800" selected>보통 - 약 1,800자</option>
+              <option value="2500">길게 - 약 2,500자</option>
+              <option value="3500">상세하게 - 약 3,500자</option>
+            </select>
+          </label>
         </section>
 
         <section class="panel-section" data-step="04">
+          <div class="section-heading">
+            <h2>사실 확인</h2>
+          </div>
+          <label>
+            장소명
+            <input id="placeName" autocomplete="off" placeholder="예: 성수동 OO식당">
+          </label>
+          <div class="source-actions">
+            <a class="secondary-button source-button" id="naverMapSearch" href="https://map.naver.com" target="_blank" rel="noreferrer">네이버지도에서 확인</a>
+          </div>
+          <label>
+            확인된 메뉴·가격·운영정보
+            <textarea id="verifiedFacts" rows="5" placeholder="네이버지도, 공식 메뉴판, 영수증, 매장 공지 등에서 확인한 내용만 적어주세요."></textarea>
+          </label>
+          <label class="toggle-row">
+            <input id="searchGroundingToggle" type="checkbox" checked>
+            <span>검색으로 사실 확인 강화</span>
+          </label>
+        </section>
+
+        <section class="panel-section" data-step="05">
           <div class="section-heading">
             <h2>레퍼런스</h2>
           </div>
@@ -138,6 +166,7 @@
               <option value="balanced">보통 - 주제와 톤만 참고</option>
             </select>
           </label>
+          <button class="secondary-button full" id="saveAllSettingsButton" type="button">설정 저장</button>
           <button class="primary-button full" id="generateButton" type="button">작성하기</button>
         </section>
       </aside>
@@ -172,6 +201,10 @@
               <article class="blog-preview" id="blogPreview" contenteditable="true" spellcheck="false"></article>
             </div>
           </div>
+          <div class="result-actions">
+            <button class="primary-button" id="copyRichButton" type="button" disabled>블로그용 복사</button>
+            <button class="ghost-button" id="copyHtmlButton" type="button" disabled>HTML 복사</button>
+          </div>
         </section>
 
         <section class="result-view" id="matchingView">
@@ -190,7 +223,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=26" defer></script>
+    <script src="./app.js?v=29" defer></script>
     <script>
       (() => {
         const heartbeat = () => {
