@@ -18,6 +18,12 @@
   box-sizing: border-box;
 }
 
+html {
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+  touch-action: manipulation;
+}
+
 body {
   margin: 0;
   min-height: 100vh;
@@ -161,7 +167,43 @@ select {
   color: var(--ink);
   outline: none;
   padding: 10px 11px;
+  font-size: 16px;
   font-weight: 500;
+}
+
+input:disabled,
+textarea:disabled,
+select:disabled {
+  background: #f3f6f5;
+  color: #8a948f;
+  cursor: not-allowed;
+}
+
+.toggle-row {
+  display: flex;
+  grid-template-columns: none;
+  align-items: center;
+  gap: 9px;
+  margin: -2px 0 12px;
+  color: var(--ink);
+  font-size: 14px;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.toggle-row input {
+  width: 18px;
+  height: 18px;
+  margin: 0;
+  accent-color: var(--accent);
+  flex: 0 0 auto;
+}
+
+.toggle-row span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 textarea {
@@ -246,8 +288,19 @@ select:focus {
 .hint {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.45;
+  font-size: clamp(9px, 2.75vw, 12px);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.upload-status {
+  overflow: hidden;
+  font-size: clamp(9px, 3vw, 12px);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .dropzone {
@@ -381,9 +434,17 @@ select:focus {
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
   margin-bottom: 9px;
   font-size: 13px;
   font-weight: 800;
+}
+
+.progress-line span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .progress-bar {
@@ -612,7 +673,12 @@ select:focus {
   border-radius: 8px;
   background: #17212b;
   color: white;
+  font-size: clamp(11px, 3.5vw, 16px);
   font-weight: 800;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   opacity: 0;
   transform: translateY(12px);
   pointer-events: none;

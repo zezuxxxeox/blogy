@@ -23,7 +23,8 @@ const state = {
   settings: {
     provider: "gemini",
     geminiModel: "gemini-2.5-flash",
-    geminiKey: ""
+    geminiKey: "",
+    noReference: false
   }
 };
 
@@ -93,6 +94,12 @@ function bindEvents() {
     event.target.value = "";
   });
 
+  $("#noReferenceToggle").addEventListener("change", () => {
+    state.settings.noReference = $("#noReferenceToggle").checked;
+    saveSettings();
+    updateReferenceControls();
+  });
+
   $("#generateButton").addEventListener("click", generatePost);
   $("#copyRichButton").addEventListener("click", copyRichHtml);
   $("#copyHtmlButton").addEventListener("click", copyHtml);
@@ -130,6 +137,14 @@ function hydrateSettings() {
   $("#providerSelect").value = "gemini";
   $("#geminiKey").value = state.settings.geminiKey;
   $("#geminiModel").value = state.settings.geminiModel;
+  $("#noReferenceToggle").checked = Boolean(state.settings.noReference);
+  updateReferenceControls();
+}
+
+function updateReferenceControls() {
+  const noReference = $("#noReferenceToggle").checked;
+  $("#referenceText").disabled = noReference;
+  $("#referenceWeight").disabled = noReference;
 }
 
 function updateProviderStatus() {
@@ -436,7 +451,7 @@ function updateUploadStatus(message) {
 
 async function generatePost() {
   const prompt = $("#userPrompt").value.trim();
-  const references = $("#referenceText").value.trim();
+  const references = $("#noReferenceToggle").checked ? "" : $("#referenceText").value.trim();
   const readyPhotos = getReadyPhotos();
   if (state.photos.some(isPhotoLoading)) {
     showToast("사진을 처리하는 중입니다. 잠시 후 다시 눌러주세요.");
@@ -498,7 +513,7 @@ function clearResultData() {
 
 function collectBrief() {
   const rawPrompt = $("#userPrompt").value.trim();
-  const rawReferences = $("#referenceText").value.trim();
+  const rawReferences = $("#noReferenceToggle").checked ? "" : $("#referenceText").value.trim();
   const rawKeywords = $("#keywordInput").value.split(",").map((item) => item.trim()).filter(Boolean);
   const readyPhotos = getReadyPhotos();
   const hashtagCount = parseHashtagCount();
@@ -515,7 +530,7 @@ function collectBrief() {
   const finalReferences = rawReferences;
   referenceAnalysis = analyzeReference(finalReferences);
   const dictationProfile = buildDictationProfile(rawPrompt, rawReferences, rawKeywords, finalPrompt, finalReferences, contextTerms);
-  const referenceWeight = $("#referenceWeight").value;
+  const referenceWeight = $("#noReferenceToggle").checked ? "balanced" : $("#referenceWeight").value;
   const inferredSectionCount = inferSectionCount(referenceAnalysis, finalReferences, finalPrompt, readyPhotos.length);
   const sectionCount = referenceWeight === "strict" && referenceAnalysis.outline.length
     ? clamp(referenceAnalysis.outline.length, MIN_AUTO_SECTIONS, MAX_AUTO_SECTIONS)
