@@ -90,7 +90,6 @@ button {
   width: min(52vw, 420px);
   aspect-ratio: 544 / 223;
   overflow: hidden;
-  transform: translateY(-20vh);
 }
 
 .splash-wordmark img {
@@ -476,6 +475,7 @@ select:focus {
 }
 
 .result-actions {
+  display: none;
   justify-content: flex-end;
   margin: 14px 0 0;
 }
@@ -1253,10 +1253,7 @@ select:focus {
   }
 
   .header-actions {
-    grid-column: auto;
-    justify-self: stretch;
-    width: 100%;
-    grid-template-columns: 1fr 1fr;
+    display: none;
   }
 
   .app-shell {
@@ -1298,6 +1295,7 @@ select:focus {
   }
 
   .result-actions {
+    display: flex;
     flex-direction: column;
     margin: 12px;
   }
@@ -1334,5 +1332,11 @@ select:focus {
   .tab {
     padding-left: 10px;
     padding-right: 10px;
+  }
+}
+
+@media (max-width: 760px) {
+  .splash-wordmark {
+    transform: translateY(-20vh);
   }
 }

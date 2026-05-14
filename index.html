@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BLOGY">
-    <link rel="stylesheet" href="./styles-green.css?v=29">
+    <link rel="stylesheet" href="./styles-green.css?v=30">
   </head>
   <body>
     <div class="splash-screen" aria-hidden="true">
@@ -29,6 +29,8 @@
         </h1>
       </div>
       <div class="header-actions">
+        <button class="ghost-button" id="copyHtmlButton" type="button" disabled>HTML 복사</button>
+        <button class="primary-button" id="copyRichButton" type="button" disabled>블로그용 복사</button>
       </div>
     </header>
 
@@ -202,8 +204,8 @@
             </div>
           </div>
           <div class="result-actions">
-            <button class="primary-button" id="copyRichButton" type="button" disabled>블로그용 복사</button>
-            <button class="ghost-button" id="copyHtmlButton" type="button" disabled>HTML 복사</button>
+            <button class="primary-button" id="copyRichButtonMobile" type="button" disabled>블로그용 복사</button>
+            <button class="ghost-button" id="copyHtmlButtonMobile" type="button" disabled>HTML 복사</button>
           </div>
         </section>
 
@@ -223,7 +225,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=29" defer></script>
+    <script src="./app.js?v=30" defer></script>
     <script>
       (() => {
         const heartbeat = () => {

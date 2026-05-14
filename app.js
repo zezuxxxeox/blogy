@@ -125,6 +125,8 @@ function bindEvents() {
   $("#generateButton").addEventListener("click", generatePost);
   $("#copyRichButton").addEventListener("click", copyRichHtml);
   $("#copyHtmlButton").addEventListener("click", copyHtml);
+  $("#copyRichButtonMobile").addEventListener("click", copyRichHtml);
+  $("#copyHtmlButtonMobile").addEventListener("click", copyHtml);
   $("#copyTextButton").addEventListener("click", copyPlainText);
   $("#downloadButton").addEventListener("click", downloadHtml);
 
@@ -1939,6 +1941,8 @@ function renderResult() {
   const hasResult = Boolean(state.result);
   $("#copyRichButton").disabled = !hasResult;
   $("#copyHtmlButton").disabled = !hasResult;
+  $("#copyRichButtonMobile").disabled = !hasResult;
+  $("#copyHtmlButtonMobile").disabled = !hasResult;
   $("#copyTextButton").disabled = !hasResult;
   $("#downloadButton").disabled = !hasResult;
 
@@ -2352,6 +2356,8 @@ function lockUi(isLocked) {
   $("#generateButton").disabled = isLocked;
   $("#copyRichButton").disabled = isLocked || !state.result;
   $("#copyHtmlButton").disabled = isLocked || !state.result;
+  $("#copyRichButtonMobile").disabled = isLocked || !state.result;
+  $("#copyHtmlButtonMobile").disabled = isLocked || !state.result;
 }
 
 function setProgress(visible, text = "", percent = 0) {

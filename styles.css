@@ -102,6 +102,7 @@ button {
 }
 
 .result-actions {
+  display: none;
   justify-content: flex-end;
   margin: 14px 0 0;
 }
@@ -758,6 +759,14 @@ select:focus {
   .button-row > button,
   .result-actions > button {
     flex: 1 1 auto;
+  }
+
+  .header-actions {
+    display: none;
+  }
+
+  .result-actions {
+    display: flex;
   }
 
   .app-shell {
