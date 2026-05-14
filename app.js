@@ -1303,6 +1303,8 @@ REFERENCE STYLE ONLY:
 중요 원칙:
 - 사진과 글 섹션의 맥락이 같을 때만 매칭한다. 애매하면 targetPhotoIds를 비워두고 이유를 쓴다.
 - 사진을 억지로 끼워 넣지 않는다. 한 사진은 가능하면 한 섹션에만 배치한다.
+- 같은 문장 또는 같은 구조의 문장을 반복하지 않는다. 각 섹션 첫 문장과 사진 연결 문장은 서로 다른 표현으로 쓴다.
+- 사진 묘사는 독립 캡션처럼 자세히 쓰지 않는다. 해당 섹션의 핵심 내용에 이어지는 짧은 단서만 한 번 자연스럽게 연결한다.
 - 사진을 설명문처럼 따로 묘사하지 말고, 사진에서 보이는 단서를 글의 주장/경험/동선에 자연스럽게 연결한다.
 - photoInsights.captionKo는 사진 매칭용 내부 메모다. draftHtml 본문에 직접 쓰거나 비슷한 문장으로 풀어 쓰지 않는다.
 - draftHtml 안에서는 "사진에서 보이는..." 같은 캡션식 문장을 반복하지 말고, 해당 섹션의 이야기 속에서 사진이 뒷받침하는 포인트를 자연스럽게 풀어낸다.
@@ -2471,7 +2473,7 @@ function normalizeResult() {
     id: section.id || `s_${index + 1}`,
     title: enforceSectionTitleFormat(removeReferenceLeakMarkers(section.title || `섹션 ${index + 1}`), index, section.intent || "", brief),
     intent: section.intent || "",
-    draftHtml: sanitizeDraftHtml(section.draftHtml || `<p>${escapeHtml(section.body || "")}</p>`),
+    draftHtml: sanitizeDraftHtml(dedupeDraftParagraphs(section.draftHtml || `<p>${escapeHtml(section.body || "")}</p>`)),
     keywordAnchors: Array.isArray(section.keywordAnchors) ? section.keywordAnchors.filter((keyword) => isAllowedOutputKeyword(keyword, brief)) : [],
     targetPhotoIds: Array.isArray(section.targetPhotoIds) ? section.targetPhotoIds.filter((id) => photoIds.has(id)) : [],
     photoRationale: removeReferenceLeakMarkers(section.photoRationale || ""),
@@ -2582,6 +2584,72 @@ function sanitizeDraftHtml(html) {
   }
   remove.forEach((node) => node.remove());
   return removeReferenceLeakMarkers(template.innerHTML).trim() || "<p></p>";
+}
+
+function dedupeDraftParagraphs(html) {
+  const template = document.createElement("template");
+  template.innerHTML = html || "";
+  const seen = new Set();
+  const seenTokens = [];
+  template.content.querySelectorAll("p, blockquote, li").forEach((node) => {
+    node.textContent = dedupeSimilarSentences(node.textContent || "");
+    const normalized = normalizeSentenceFingerprint(node.textContent || "");
+    if (!normalized) return;
+    const tokens = getDedupeTokens(node.textContent || "");
+    if (seen.has(normalized) || isNearDuplicateTokens(tokens, seenTokens) || isLowValueRepeatedPhotoSentence(node.textContent || "")) {
+      node.remove();
+      return;
+    }
+    seen.add(normalized);
+    if (tokens.size) seenTokens.push(tokens);
+  });
+  return template.innerHTML;
+}
+
+function dedupeSimilarSentences(text) {
+  const parts = String(text || "").split(/(?<=[.!?。！？])\s+|\n+/).map((item) => item.trim()).filter(Boolean);
+  if (parts.length <= 1) return text;
+  const kept = [];
+  const tokenSets = [];
+  parts.forEach((sentence) => {
+    const tokens = getDedupeTokens(sentence);
+    const fingerprint = normalizeSentenceFingerprint(sentence);
+    const duplicate = kept.some((item, index) => normalizeSentenceFingerprint(item) === fingerprint || isTokenSetSimilar(tokens, tokenSets[index]));
+    if (!duplicate) {
+      kept.push(sentence);
+      tokenSets.push(tokens);
+    }
+  });
+  return kept.join(" ");
+}
+
+function normalizeSentenceFingerprint(text) {
+  return String(text || "")
+    .replace(/\s+/g, "")
+    .replace(/[.!?。！？~ㅎㅋㅠㅜ]+/g, "")
+    .replace(/[^\p{L}\p{N}]/gu, "")
+    .slice(0, 80);
+}
+
+function isLowValueRepeatedPhotoSentence(text) {
+  const cleaned = String(text || "").replace(/\s+/g, " ").trim();
+  return /사진에서 보이는|사진 속|장면과 글의 흐름|함께 보면|자연스럽게 이어|분위기는 .*따라가며|보기 전에 .*먼저 확인하면/.test(cleaned);
+}
+
+function getDedupeTokens(text) {
+  return new Set(extractKeywords(String(text || ""))
+    .map((token) => token.replace(/[^\p{L}\p{N}]/gu, "").trim())
+    .filter((token) => token.length >= 2 && !["사진", "본문", "후기", "리뷰", "정도", "느낌", "부분", "생각"].includes(token)));
+}
+
+function isNearDuplicateTokens(tokens, tokenSets) {
+  return tokenSets.some((item) => isTokenSetSimilar(tokens, item));
+}
+
+function isTokenSetSimilar(a, b) {
+  if (!a || !b || a.size < 3 || b.size < 3) return false;
+  const overlap = [...a].filter((token) => b.has(token)).length;
+  return overlap / Math.min(a.size, b.size) >= 0.72;
 }
 
 function removeReferenceLeakMarkers(value) {
@@ -2710,11 +2778,12 @@ function buildBlogHtml() {
       const photo = getReadyPhotos().find((item) => item.id === photoId);
       const insight = state.result.photoInsights.find((item) => item.photoId === photoId);
       if (!photo || !photo.exportDataUrl) return "";
-      const caption = insight?.captionKo || section.altText || photo.name;
+      const caption = buildContextualPhotoCaption(photo, section, insight);
+      const captionHtml = caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : "";
       return `
         <figure data-blogy-photo="${escapeAttr(photoId)}">
-          <img src="${photo.exportDataUrl}" alt="${escapeAttr(section.altText || caption)}">
-          <figcaption>${escapeHtml(caption)}</figcaption>
+          <img src="${photo.exportDataUrl}" alt="${escapeAttr(section.altText || caption || photo.name)}">
+          ${captionHtml}
         </figure>
       `;
     }).join("");
@@ -2734,6 +2803,18 @@ function buildBlogHtml() {
   `.trim();
 }
 
+function buildContextualPhotoCaption(photo, section, insight = null) {
+  // 사진 설명은 15자 이내로 짧게만. 장황한 묘사는 쓰지 않는다.
+  const note = removeReferenceLeakMarkers(photo.note || "").replace(/\s+/g, " ").trim();
+  if (note) return note.slice(0, 15);
+
+  const tags = [...(insight?.visualKeywords || []), ...(photo.visualTags || [])];
+  const hint = tags.find((tag) => tag && !/가로|세로|사진|이미지|대표|상세|컷|장면/.test(tag));
+  if (hint) return hint.slice(0, 15);
+
+  return "";
+}
+
 function stripInternalChecklistHtml(html) {
   const template = document.createElement("template");
   template.innerHTML = html || "";
@@ -2745,7 +2826,8 @@ function stripInternalChecklistHtml(html) {
     /과장\s*\/?\s*이모지\s*\/?\s*AI\s*문투/i,
     /HTML\s*태그.*h2.*p.*blockquote/i,
     /음성\s*메모\s*보정/i,
-    /inputCorrections/i
+    /inputCorrections/i,
+    /사진에서 보이는|사진 속|함께 보면|자연스럽게 이어/i
   ];
   template.content.querySelectorAll("p, blockquote, li").forEach((node) => {
     const text = node.textContent.replace(/\s+/g, " ").trim();
