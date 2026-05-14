@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BLOGY">
-    <link rel="stylesheet" href="./styles-green.css?v=36">
+    <link rel="stylesheet" href="./styles-green.css?v=38">
   </head>
   <body>
     <div class="splash-screen" aria-hidden="true">
@@ -57,7 +57,7 @@
             Gemini API Key
             <input id="geminiKey" type="password" autocomplete="off">
           </label>
-          <div class="button-row">
+          <div class="button-row settings-row">
             <button class="secondary-button" id="saveSettingsButton" type="button">키 저장</button>
             <a class="text-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">무료 키 만들기</a>
           </div>
@@ -85,8 +85,16 @@
           <div class="section-heading">
             <h2>글 방향</h2>
           </div>
+          <label class="toggle-row">
+            <input id="searchGroundingToggle" type="checkbox" checked>
+            <span>장소 사용</span>
+          </label>
+          <label id="placeNameLabel">
+            장소명
+            <input id="placeName" autocomplete="off" placeholder="예: 행복1동 사랑식당">
+          </label>
           <label>
-            원하는 글 프롬프트
+            후기/규칙 작성
             <textarea id="userPrompt" rows="5"></textarea>
           </label>
           <div class="field-grid two">
@@ -111,7 +119,7 @@
           </div>
           <div class="field-grid two">
             <label>
-              꼭 넣을 키워드
+              필수 키워드
               <input id="keywordInput">
             </label>
             <label>
@@ -136,27 +144,6 @@
         </section>
 
         <section class="panel-section" data-step="04">
-          <div class="section-heading">
-            <h2>장소 입력</h2>
-          </div>
-          <label>
-            장소명
-            <input id="placeName" autocomplete="off" placeholder="예: 성수동 OO식당">
-          </label>
-          <div class="source-actions">
-            <a class="secondary-button source-button" id="naverMapSearch" href="https://map.naver.com" target="_blank" rel="noreferrer">네이버지도에서 확인</a>
-          </div>
-          <label>
-            장소 메모
-            <textarea id="verifiedFacts" rows="5" placeholder="메뉴, 가격, 영업시간, 주차 등 알고 있는 내용을 적어주세요."></textarea>
-          </label>
-          <label class="toggle-row">
-            <input id="searchGroundingToggle" type="checkbox" checked>
-            <span>장소 기반 검색 사용</span>
-          </label>
-        </section>
-
-        <section class="panel-section" data-step="05">
           <div class="section-heading">
             <h2>레퍼런스</h2>
           </div>
@@ -233,7 +220,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=36" defer></script>
+    <script src="./app.js?v=38" defer></script>
     <script>
       (() => {
         const heartbeat = () => {

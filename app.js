@@ -30,7 +30,6 @@ const state = {
     wordCountMode: "1800",
     customWordCount: 1800,
     placeName: "",
-    verifiedFacts: "",
     referenceWeight: "strict",
     hashtagCount: 8,
     keywords: ""
@@ -105,6 +104,7 @@ function bindEvents() {
 
   $("#searchGroundingToggle").addEventListener("change", () => {
     state.settings.usePlaceSearch = $("#searchGroundingToggle").checked;
+    updatePlaceControls();
     saveSettings();
   });
 
@@ -124,12 +124,6 @@ function bindEvents() {
 
   $("#placeName").addEventListener("input", () => {
     state.settings.placeName = $("#placeName").value.trim();
-    saveSettings();
-    updateMapSearchLink();
-  });
-
-  $("#verifiedFacts").addEventListener("input", () => {
-    state.settings.verifiedFacts = $("#verifiedFacts").value.trim();
     saveSettings();
   });
 
@@ -178,14 +172,13 @@ function persistSettingsFromControls(showMessage = false) {
   state.settings.wordCountMode = $("#wordCountSelect").value;
   state.settings.customWordCount = parseCustomWordCount();
   state.settings.placeName = $("#placeName").value.trim();
-  state.settings.verifiedFacts = $("#verifiedFacts").value.trim();
   state.settings.referenceWeight = $("#referenceWeight").value;
   state.settings.hashtagCount = parseHashtagCount();
   state.settings.keywords = $("#keywordInput").value;
   saveSettings();
   updateProviderStatus();
   updateReferenceControls();
-  updateMapSearchLink();
+  updatePlaceControls();
   if (showMessage) showToast("저장이 완료되었습니다.");
 }
 
@@ -201,13 +194,12 @@ function hydrateSettings() {
   if (!$("#wordCountSelect").value) $("#wordCountSelect").value = "1800";
   $("#customWordCount").value = String(state.settings.customWordCount || state.settings.wordCount || 1800);
   $("#placeName").value = state.settings.placeName || "";
-  $("#verifiedFacts").value = state.settings.verifiedFacts || "";
   $("#referenceWeight").value = state.settings.referenceWeight || "strict";
   $("#hashtagCount").value = String(state.settings.hashtagCount ?? 8);
   $("#keywordInput").value = state.settings.keywords || "";
   updateReferenceControls();
   updateWordCountControls();
-  updateMapSearchLink();
+  updatePlaceControls();
 }
 
 function updateReferenceControls() {
@@ -216,12 +208,10 @@ function updateReferenceControls() {
   $("#referenceWeight").disabled = noReference;
 }
 
-function updateMapSearchLink() {
-  const query = $("#placeName")?.value.trim();
-  const href = query
-    ? `https://map.naver.com/p/search/${encodeURIComponent(query)}`
-    : "https://map.naver.com";
-  $("#naverMapSearch").href = href;
+function updatePlaceControls() {
+  const usePlace = $("#searchGroundingToggle")?.checked;
+  $("#placeName").disabled = !usePlace;
+  $("#placeNameLabel")?.classList.toggle("is-disabled", !usePlace);
 }
 
 function updateProviderStatus() {
@@ -637,8 +627,7 @@ function collectBrief() {
     platform: $("#platformSelect").value,
     hashtagCount,
     targetWordCount,
-    placeName: $("#placeName").value.trim(),
-    verifiedFacts: $("#verifiedFacts").value.trim(),
+    placeName: $("#searchGroundingToggle").checked ? $("#placeName").value.trim() : "",
     usePlaceSearch: $("#searchGroundingToggle").checked,
     keywords: rawKeywords.map((keyword) => normalizeDictationText(keyword, contextTerms)).filter(Boolean),
     dictationProfile,
@@ -842,8 +831,6 @@ ${prompt || "(없음)"}
 해시태그 개수: ${brief.hashtagCount}
 목표 글자수: 약 ${brief.targetWordCount}자
 장소명: ${brief.placeName || "(없음)"}
-장소 메모:
-${brief.verifiedFacts || "(없음)"}
 필수 키워드: ${brief.keywords.join(", ") || "(없음)"}
 마무리 방식: 별도 CTA 없이 레퍼런스의 결말 흐름을 자연스럽게 반영
 
@@ -870,15 +857,16 @@ ${rawRef || "(없음)"}
 function buildFactDirective(brief) {
   const searchMode = brief.usePlaceSearch
     ? "Place search is enabled. Use Google Search grounding with exact Korean keywords built from the neighborhood/dong, place name, menu, price, hours, address, Naver Map, and recent blog-review terms."
-    : "Place search is disabled. Use only the user's place memo, photos, prompt, and reference text.";
+    : "Place search is disabled. Use only the user's photos, prompt, and reference text.";
   return `
 [FACT SAFETY RULES]
 ${searchMode}
 - This is likely an informational blog post. Minimize hallucination.
-- If the topic is a restaurant, cafe, shop, clinic, product, price, menu, operating hour, address, parking, reservation, or policy, use only facts found in the user's place memo, reference text, visible photo evidence, or grounded search results.
+- If the topic is a restaurant, cafe, shop, clinic, product, price, menu, operating hour, address, parking, reservation, or policy, use only facts found in the user's reference text, visible photo evidence, or grounded search results.
 - Never invent menu names, prices, addresses, phone numbers, opening hours, parking rules, reservation rules, brand history, awards, or promotions.
 - If a fact is not verified, omit it or write in Korean that it should be checked before visiting. Do not fill blanks with plausible guesses.
 - Use the place name as the main search keyword when available: "${brief.placeName || ""}". If it contains a neighborhood/dong and shop name, treat that full string as the exact primary query.
+- If place search is enabled and a place name is provided, make that place the article's main subject even when the user's prompt is short. Interpret the prompt as writing rules, desired angle, or extra instructions for that place.
 - For restaurant/cafe posts, try exact search-query intents such as "${brief.placeName || "동 가게명"} 메뉴", "${brief.placeName || "동 가게명"} 가격", "${brief.placeName || "동 가게명"} 네이버지도", "${brief.placeName || "동 가게명"} 영업시간", and "${brief.placeName || "동 가게명"} 블로그".
 - For prices, use only the newest available source. Prefer official/Naver Map menu data, current menu photos, recent receipt photos, or recent reviews with visible dates.
 - Do not use prices from old blog posts or undated pages. If the search result date is unclear, treat the price as unverified.
@@ -1681,7 +1669,7 @@ function pickContextEmoji(text, index, brief = null) {
 
 function generateLocally(brief, fallbackReason = "") {
   setProgress(true, "레퍼런스 구조를 반영해 로컬 초안 생성 중", 45);
-  const keywords = unique([...extractKeywords(`${brief.prompt}\n${brief.references}\n${brief.placeName}\n${brief.verifiedFacts}`), ...brief.keywords]).slice(0, 18);
+  const keywords = unique([...extractKeywords(`${brief.prompt}\n${brief.references}\n${brief.placeName}`), ...brief.keywords]).slice(0, 18);
   const title = makeLocalTitle(brief, keywords);
   const referenceParagraphs = splitParagraphs(brief.references);
   const sections = buildLocalSections(brief, referenceParagraphs, keywords);
@@ -1921,7 +1909,7 @@ function normalizeResult() {
   state.result.seo = {
     title: enforceSeoTitleFormat(state.result.seo?.title || makeLocalTitle(brief, extractKeywords(brief.prompt)), brief, extractKeywords(brief.prompt)),
     description: state.result.seo?.description || makeDescription(collectBrief(), extractKeywords(collectBrief().prompt)),
-    tags: normalizeSeoTags(state.result.seo?.tags, brief, extractKeywords(`${brief.prompt} ${brief.references} ${brief.placeName} ${brief.verifiedFacts}`)),
+    tags: normalizeSeoTags(state.result.seo?.tags, brief, extractKeywords(`${brief.prompt} ${brief.references} ${brief.placeName}`)),
     slug: state.result.seo?.slug || slugify(state.result.seo?.title || "blogy")
   };
 }

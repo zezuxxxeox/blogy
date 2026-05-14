@@ -461,6 +461,14 @@ select:focus {
   flex-wrap: wrap;
 }
 
+.settings-row {
+  justify-content: space-between;
+}
+
+.settings-row .text-link {
+  margin-left: auto;
+}
+
 .source-actions,
 .result-actions {
   display: flex;
@@ -510,15 +518,16 @@ select:focus {
 .notice-toggle {
   margin: 8px 0 0;
   color: var(--muted);
-  font-size: 11px;
+  opacity: 0.72;
+  font-size: 9.5px;
   line-height: 1.45;
 }
 
 .notice-toggle summary {
   width: fit-content;
-  color: var(--ink);
+  color: var(--muted);
   cursor: pointer;
-  font-size: 12px;
+  font-size: 10px;
   font-weight: 850;
 }
 
