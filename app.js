@@ -1278,6 +1278,9 @@ ${factDirective}
 - 레퍼런스 반영 강도가 엄격이면 referenceBlueprint.titleStyle과 sentenceStyle을 최우선으로 따른다. 제목의 괄호, 파이프, 슬래시, 번호형 소제목, 질문형/후기형 어미, 문장 종결 방식을 새 주제에 맞게 재현한다.
 - 레퍼런스의 문장을 그대로 베끼지 않는다. 7어절 이상 연속 복사하지 말고, 사실과 표현은 사용자 프롬프트와 사진에 맞게 새로 쓴다.
 - 사용자가 준 사실, 사진에서 보이는 정보, 레퍼런스에서 확인되는 정보 외에는 단정하지 않는다.
+- 레퍼런스 텍스트는 내부 참고 자료다. 결과의 seo.title, sections.title, draftHtml, captionKo, altText에 "[카테고리 참고글]", "제목:", "본문:", "---", "레퍼런스" 같은 내부 표식을 절대 쓰지 않는다.
+- 레퍼런스 구조는 "제목 → 해시태그 → 인사 → 제품/장소 소개 → 핵심 후기 → 세부 후기 → 총평" 정도의 흐름만 가져오고, 문장과 사실은 새로 쓴다.
+- 사용자가 직접 프롬프트에 쓴 사실, 표현, 강조점은 우선 반영한다. 다만 레퍼런스나 AI 추측으로 가격, 구매처, 품귀, 뉴스, 이벤트, 거래가, 날짜를 새로 만들지 않는다.
 - 한국어는 자연스럽고 검색 노출에 어울리게 쓴다. 과장과 AI 같은 문투는 피한다.
 - 이모지는 반드시 글 맥락에 맞게 사용한다. referenceBlueprint.emojiProfile에 이모지가 있으면 그 계열과 위치를 우선 모방하고, 없으면 사진/주제/키워드에 맞는 이모지만 고른다. 고정 아이콘처럼 모든 글에 같은 이모지를 쓰지 않는다.
 - HTML은 h2, p, blockquote 정도의 안전한 태그만 사용한다. figure/img 태그는 내가 나중에 붙일 것이므로 draftHtml 안에는 넣지 않는다.
@@ -1311,7 +1314,7 @@ ${factDirective}
   "photoInsights": [
     {
       "photoId": "입력 photo id",
-      "captionKo": "사진 외형 설명이 아니라 본문 흐름에 연결되는 맥락 문장",
+      "captionKo": "사진 매칭용 내부 메모. draftHtml 본문에 직접 넣지 않는다",
       "visualKeywords": ["키워드"],
       "mood": "분위기",
       "bestUse": "대표/도입/상세/증거/마무리 중 하나",
@@ -1324,7 +1327,7 @@ ${factDirective}
       "id": "s_1",
       "title": "문맥에 맞는 이모지가 포함된 섹션 제목",
       "intent": "이 섹션의 역할",
-      "draftHtml": "<p>문단...</p><p>문단...</p>",
+      "draftHtml": "<p>사진 설명문이나 레퍼런스 표식 없이 새로 쓴 본문 문단...</p>",
       "keywordAnchors": ["사진 매칭용 키워드"],
       "targetPhotoIds": ["photo id"],
       "photoRationale": "왜 이 사진이 어울리는지",
@@ -1393,6 +1396,7 @@ function buildFactDirective(brief) {
 ${searchMode}
 - This is likely an informational blog post. Minimize hallucination.
 - If the topic is a restaurant, cafe, shop, clinic, product, price, menu, operating hour, address, parking, reservation, or policy, use only facts found in the user's reference text, visible photo evidence, or grounded search results.
+- Facts explicitly written in the user's prompt are allowed and should be reflected naturally. Treat them as user-provided facts, not hallucinations.
 - Never invent menu names, prices, addresses, phone numbers, opening hours, parking rules, reservation rules, brand history, awards, or promotions.
 - If a fact is not verified, omit it or write in Korean that it should be checked before visiting. Do not fill blanks with plausible guesses.
 - Use the place name as the main search keyword when available: "${brief.placeName || ""}". If it contains a neighborhood/dong and shop name, treat that full string as the exact primary query.
@@ -2325,7 +2329,7 @@ function makeLocalPhotoInsight(photo, brief = null) {
   const bridge = normalizedNote || visualKeywords.slice(0, 3).join(", ") || photo.name.replace(/\.[^.]+$/, "");
   return {
     photoId: photo.id,
-    captionKo: `${bridge}를 설명하는 문단과 자연스럽게 이어지는 장면`,
+    captionKo: `${bridge} 관련 문단에 매칭할 내부 메모`,
     visualKeywords,
     mood,
     bestUse,
@@ -2394,6 +2398,12 @@ function normalizeResult() {
   });
 
   state.result.photoInsights = readyPhotos.map((photo) => insightsById.get(photo.id));
+  state.result.photoInsights.forEach((insight) => {
+    if (!insight) return;
+    insight.captionKo = removeReferenceLeakMarkers(insight.captionKo || "");
+    insight.contextBridge = removeReferenceLeakMarkers(insight.contextBridge || "");
+    insight.avoidReason = removeReferenceLeakMarkers(insight.avoidReason || "");
+  });
 
   const localReferenceSections = buildLocalSections(brief, splitParagraphs(brief.references), extractKeywords(`${brief.prompt} ${brief.references}`));
   const desiredSectionCount = brief.referenceWeight === "strict" && brief.referenceAnalysis?.outline?.length
@@ -2406,13 +2416,13 @@ function normalizeResult() {
 
   state.result.sections = sourceSections.slice(0, desiredSectionCount).map((section, index) => ({
     id: section.id || `s_${index + 1}`,
-    title: enforceSectionTitleFormat(section.title || `섹션 ${index + 1}`, index, section.intent || "", brief),
+    title: enforceSectionTitleFormat(removeReferenceLeakMarkers(section.title || `섹션 ${index + 1}`), index, section.intent || "", brief),
     intent: section.intent || "",
     draftHtml: sanitizeDraftHtml(section.draftHtml || `<p>${escapeHtml(section.body || "")}</p>`),
     keywordAnchors: Array.isArray(section.keywordAnchors) ? section.keywordAnchors : [],
     targetPhotoIds: Array.isArray(section.targetPhotoIds) ? section.targetPhotoIds.filter((id) => photoIds.has(id)) : [],
-    photoRationale: section.photoRationale || "",
-    altText: section.altText || `${section.title || "본문"} 관련 사진`
+    photoRationale: removeReferenceLeakMarkers(section.photoRationale || ""),
+    altText: removeReferenceLeakMarkers(section.altText || `${section.title || "본문"} 관련 사진`)
   }));
 
   if (!state.result.sections.length) {
@@ -2423,7 +2433,7 @@ function normalizeResult() {
   readyPhotos.forEach((photo) => {
     const containing = state.result.sections.find((section) => section.targetPhotoIds.includes(photo.id));
     photo.matchedSectionId = containing?.id || "";
-    photo.caption = insightsById.get(photo.id)?.captionKo || photo.caption || photo.name;
+    photo.caption = removeReferenceLeakMarkers(insightsById.get(photo.id)?.captionKo || photo.caption || photo.name);
     photo.keywords = insightsById.get(photo.id)?.visualKeywords || [];
   });
 
@@ -2445,8 +2455,8 @@ function normalizeResult() {
   });
 
   state.result.seo = {
-    title: enforceSeoTitleFormat(state.result.seo?.title || makeLocalTitle(brief, extractKeywords(brief.prompt)), brief, extractKeywords(brief.prompt)),
-    description: state.result.seo?.description || makeDescription(collectBrief(), extractKeywords(collectBrief().prompt)),
+    title: enforceSeoTitleFormat(removeReferenceLeakMarkers(state.result.seo?.title || makeLocalTitle(brief, extractKeywords(brief.prompt))), brief, extractKeywords(brief.prompt)),
+    description: removeReferenceLeakMarkers(state.result.seo?.description || makeDescription(collectBrief(), extractKeywords(collectBrief().prompt))),
     tags: normalizeSeoTags(state.result.seo?.tags, brief, extractKeywords(`${brief.prompt} ${brief.references} ${brief.placeName}`)),
     slug: state.result.seo?.slug || slugify(state.result.seo?.title || "blogy")
   };
@@ -2495,7 +2505,17 @@ function sanitizeDraftHtml(html) {
     }
   }
   remove.forEach((node) => node.remove());
-  return template.innerHTML.trim() || "<p></p>";
+  return removeReferenceLeakMarkers(template.innerHTML).trim() || "<p></p>";
+}
+
+function removeReferenceLeakMarkers(value) {
+  return String(value || "")
+    .replace(/\[카테고리\s*참고글\s*\d+\]/gi, "")
+    .replace(/\[移댄뀒怨좊━[^\]]*\]/gi, "")
+    .replace(/^\s*(제목|본문|레퍼런스)\s*:\s*/gim, "")
+    .replace(/^\s*(\?쒕ぉ|蹂몃Ц)\s*:\s*/gim, "")
+    .replace(/^\s*---+\s*$/gim, "")
+    .replace(/\n{3,}/g, "\n\n");
 }
 
 function renderResult() {
