@@ -702,7 +702,10 @@ async function maybeImportReferenceUrl() {
 async function importReferenceFromUrl(url) {
   const targets = buildReferenceFetchTargets(url);
   let lastError = null;
+  const tried = new Set();
   for (const target of targets) {
+    if (tried.has(target)) continue;
+    tried.add(target);
     try {
       const response = await fetch(`/__fetch?url=${encodeURIComponent(target)}`, { cache: "no-store" });
       if (!response.ok) {
@@ -712,12 +715,38 @@ async function importReferenceFromUrl(url) {
       const html = await response.text();
       const extracted = extractReferenceFromHtml(html);
       if (isValidReferencePost(extracted)) return extracted;
+      const iframeTargets = extractNaverIframeTargets(html, target);
+      for (const iframeTarget of iframeTargets) {
+        if (tried.has(iframeTarget)) continue;
+        tried.add(iframeTarget);
+        const iframeResponse = await fetch(`/__fetch?url=${encodeURIComponent(iframeTarget)}`, { cache: "no-store" });
+        if (!iframeResponse.ok) continue;
+        const iframeHtml = await iframeResponse.text();
+        const iframeExtracted = extractReferenceFromHtml(iframeHtml);
+        if (isValidReferencePost(iframeExtracted)) return iframeExtracted;
+      }
     } catch (error) {
       lastError = error;
     }
   }
   if (lastError) throw lastError;
   return null;
+}
+
+function extractNaverIframeTargets(html, baseUrl) {
+  const links = [];
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("iframe[src]").forEach((iframe) => {
+    const src = normalizeUrl(iframe.getAttribute("src"), baseUrl);
+    if (/blog\.naver\.com/i.test(src) && /PostView|logNo=|\/\d{5,}/i.test(src)) links.push(src);
+  });
+  const normalizedHtml = html.replace(/&amp;/g, "&").replace(/\\u002F/g, "/");
+  const iframeMatches = normalizedHtml.matchAll(/<iframe[^>]+src=["']([^"']+)["']/gi);
+  for (const match of iframeMatches) {
+    const src = normalizeUrl(match[1], baseUrl);
+    if (/blog\.naver\.com/i.test(src) && /PostView|logNo=|\/\d{5,}/i.test(src)) links.push(src);
+  }
+  return unique(links);
 }
 
 async function importReferenceCollectionFromUrl(url) {
@@ -957,7 +986,7 @@ function extractReferenceFromHtml(html) {
 
   const bodySelectors = [
     ".se-main-container", "#postViewArea .se-main-container", "#postViewArea .post_ct",
-    ".post_ct", ".se_component_wrap", "article", ".article", "#content-area"
+    ".post_ct", ".se_component_wrap", "#post-view", "#postListBody", "article", ".article", "#content-area"
   ];
   let bodyNode = null;
   for (const selector of bodySelectors) {
@@ -1023,7 +1052,7 @@ function isNaverBoilerplateLine(line) {
 }
 
 function isLikelyArticleBody(text) {
-  if (!text || text.length < 180) return false;
+  if (!text || text.length < 80) return false;
   const compact = text.replace(/\s+/g, "");
   const badSignals = [
     "메뉴바로가기본문바로가기", "이포스트는네이버블로그에서작성된게시글입니다",
@@ -1035,7 +1064,8 @@ function isLikelyArticleBody(text) {
   if (badScore >= 2) return false;
   const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
   const usefulLines = lines.filter((line) => line.length >= 12 && !isNaverBoilerplateLine(line));
-  return usefulLines.length >= 3;
+  if (usefulLines.length >= 3) return true;
+  return usefulLines.length >= 2 && compact.length >= 450;
 }
 
 function isValidReferencePost(extracted) {
