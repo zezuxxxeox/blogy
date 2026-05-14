@@ -4,8 +4,7 @@ $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Desktop = [Environment]::GetFolderPath("Desktop")
 $ShortcutPath = Join-Path $Desktop "BLOGY.download.lnk"
 $LegacyShortcutPaths = @(
-  (Join-Path $Desktop "BLOGY.lnk"),
-  (Join-Path $Desktop "Easy Posting Studio.lnk")
+  (Join-Path $Desktop "BLOGY.lnk")
 )
 $BrokenLauncherPath = Join-Path $Desktop "BLOGY.download"
 $BackupDir = Join-Path $ProjectDir ".launcher-backups"

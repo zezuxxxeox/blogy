@@ -51,6 +51,7 @@ function init() {
   bindEvents();
   renderPhotos();
   updateProviderStatus();
+  updateSavedSettingState();
   applyPreviewWidth();
 }
 
@@ -71,6 +72,7 @@ function bindEvents() {
   $("#providerSelect").addEventListener("change", () => {
     state.settings.provider = $("#providerSelect").value;
     updateProviderStatus();
+    updateSavedSettingState();
   });
 
   $("#saveSettingsButton").addEventListener("click", () => persistSettingsFromControls(true));
@@ -179,6 +181,7 @@ function persistSettingsFromControls(showMessage = false) {
   updateProviderStatus();
   updateReferenceControls();
   updatePlaceControls();
+  updateSavedSettingState();
   if (showMessage) showToast("저장이 완료되었습니다.");
 }
 
@@ -200,6 +203,7 @@ function hydrateSettings() {
   updateReferenceControls();
   updateWordCountControls();
   updatePlaceControls();
+  updateSavedSettingState();
 }
 
 function updateReferenceControls() {
@@ -222,6 +226,18 @@ function updateProviderStatus() {
     if (label) label.textContent = hasKey ? "고품질 AI 활성" : "키 필요";
   } else {
     if (label) label.textContent = "키 필요";
+  }
+}
+
+function updateSavedSettingState() {
+  const hasKey = $("#geminiKey")?.value.trim().length > 0;
+  const section = document.querySelector('[data-step="01"]');
+  const label = $("#apiModeLabel");
+  section?.classList.toggle("is-saved", hasKey);
+  if (label) {
+    label.textContent = hasKey ? "입력 완료" : "입력 필요";
+    label.hidden = false;
+    label.classList.toggle("is-complete", hasKey);
   }
 }
 
@@ -410,7 +426,7 @@ function sampleColors(image) {
   const buckets = new Map();
   let brightnessTotal = 0;
   let warm = 0;
-  let green = 0;
+  let foliage = 0;
   let blue = 0;
   let neutral = 0;
 
@@ -421,7 +437,7 @@ function sampleColors(image) {
     const brightness = (r * 299 + g * 587 + b * 114) / 1000;
     brightnessTotal += brightness;
     if (r > g + 18 && r > b + 18) warm += 1;
-    if (g > r + 12 && g > b + 8) green += 1;
+    if (g > r + 12 && g > b + 8) foliage += 1;
     if (b > r + 12 && b > g + 8) blue += 1;
     if (Math.abs(r - g) < 18 && Math.abs(g - b) < 18) neutral += 1;
     const key = `${Math.round(r / 32) * 32},${Math.round(g / 32) * 32},${Math.round(b / 32) * 32}`;
@@ -443,7 +459,7 @@ function sampleColors(image) {
   if (sourceWidth > sourceHeight * 1.25) visualTags.push("가로 사진", "대표 이미지");
   if (sourceHeight > sourceWidth * 1.25) visualTags.push("세로 사진", "상세 컷");
   if (warm / total > 0.26) visualTags.push("따뜻한 색감", "음식", "실내");
-  if (green / total > 0.2) visualTags.push("자연", "야외");
+  if (foliage / total > 0.2) visualTags.push("자연", "야외");
   if (blue / total > 0.2) visualTags.push("하늘", "물", "청량함");
   if (neutral / total > 0.44) visualTags.push("깔끔함", "제품", "공간");
   return { width: sourceWidth, height: sourceHeight, colors, brightness, visualTags };

@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BLOGY">
-    <link rel="stylesheet" href="./styles-green.css?v=38">
+    <link rel="stylesheet" href="./styles.css?v=41">
   </head>
   <body>
     <div class="splash-screen" aria-hidden="true">
@@ -39,7 +39,7 @@
         <section class="panel-section" data-step="01">
           <div class="section-heading">
             <h2>무료 AI 설정</h2>
-            <span id="apiModeLabel" hidden>Gemini 권장</span>
+            <span class="status-badge" id="apiModeLabel" hidden>입력 필요</span>
           </div>
           <div class="field-grid two">
             <label>
@@ -220,7 +220,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=38" defer></script>
+    <script src="./app.js?v=41" defer></script>
     <script>
       (() => {
         const heartbeat = () => {
