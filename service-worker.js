@@ -1,11 +1,11 @@
 // BLOGY service worker — makes the app installable and work offline.
 // Bump CACHE_VERSION whenever index.html / app.js / styles change so users get fresh files.
-const CACHE_VERSION = "blogy-v51";
+const CACHE_VERSION = "blogy-v52";
 const APP_SHELL = [
   "./",
   "./index.html",
-  "./app.js?v=51",
-  "./styles.css?v=51",
+  "./app.js?v=52",
+  "./styles.css?v=52",
   "./manifest.webmanifest",
   "./assets/blogy-title.png",
   "./assets/blogy-title-mark.png",

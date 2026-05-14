@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BLOGY">
-    <link rel="stylesheet" href="./styles.css?v=51">
+    <link rel="stylesheet" href="./styles.css?v=52">
   </head>
   <body>
     <div class="splash-screen" aria-hidden="true">
@@ -150,7 +150,7 @@
           </div>
           <label>
             참고할 블로그 글
-            <textarea id="referenceText" rows="10" placeholder="블로그 글 내용, 글 주소, 블로그/카테고리 주소를 넣어주세요. 글 주소는 본문을 가져오고, 블로그/카테고리 주소는 그 안의 여러 글 제목과 본문만 가져옵니다."></textarea>
+            <textarea id="referenceText" rows="10" placeholder="레퍼런스로 활용할 블로그 주소를 입력하세요."></textarea>
           </label>
           <label class="toggle-row">
             <input id="noReferenceToggle" type="checkbox">
@@ -222,7 +222,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=51" defer></script>
+    <script src="./app.js?v=52" defer></script>
     <script>
       (() => {
         const heartbeat = () => {

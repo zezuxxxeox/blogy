@@ -2,7 +2,7 @@ $ErrorActionPreference = "Stop"
 
 $ProjectDir = Split-Path -Parent $MyInvocation.MyCommand.Path
 $Url = "http://127.0.0.1:5174"
-$AppVersion = "v=51"
+$AppVersion = "v=52"
 $LogPath = Join-Path $ProjectDir ".server.log"
 $ErrPath = Join-Path $ProjectDir ".server.err.log"
 
