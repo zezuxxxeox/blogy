@@ -711,7 +711,7 @@ async function importReferenceFromUrl(url) {
       }
       const html = await response.text();
       const extracted = extractReferenceFromHtml(html);
-      if (extracted && extracted.body && extracted.body.length > 80) return extracted;
+      if (isValidReferencePost(extracted)) return extracted;
     } catch (error) {
       lastError = error;
     }
@@ -744,7 +744,7 @@ async function importReferenceCollectionFromUrl(url) {
   for (const postUrl of unique(links).slice(0, 8)) {
     try {
       const extracted = await importReferenceFromUrl(postUrl);
-      if (extracted && extracted.body && extracted.body.length > 80) {
+      if (isValidReferencePost(extracted)) {
         posts.push({ url: postUrl, title: extracted.title || "", body: extracted.body });
       }
     } catch (error) {
@@ -939,7 +939,7 @@ function buildReferenceFetchTargets(rawUrl) {
 
 function extractReferenceFromHtml(html) {
   const doc = new DOMParser().parseFromString(html, "text/html");
-  doc.querySelectorAll("script, style, noscript, iframe, svg, nav, header, footer, aside, form, button").forEach((node) => node.remove());
+  doc.querySelectorAll("script, style, noscript, iframe, svg, nav, header, footer, aside, form, button, template").forEach((node) => node.remove());
 
   const titleSelectors = [
     ".se-title-text", ".se_title", ".se-module-text.se-title", ".pcol1", ".htitle",
@@ -956,19 +956,19 @@ function extractReferenceFromHtml(html) {
   }
 
   const bodySelectors = [
-    ".se-main-container", "#postViewArea", ".post_ct", "#viewTypeSelector",
-    ".se_component_wrap", "#content-area", "article", ".article", "#content"
+    ".se-main-container", "#postViewArea .se-main-container", "#postViewArea .post_ct",
+    ".post_ct", ".se_component_wrap", "article", ".article", "#content-area"
   ];
   let bodyNode = null;
   for (const selector of bodySelectors) {
     const node = doc.querySelector(selector);
-    if (node && node.textContent.replace(/\s+/g, "").length > 80) {
+    const text = node ? cleanReferenceBodyText(blockElementToText(node)) : "";
+    if (isLikelyArticleBody(text)) {
       bodyNode = node;
       break;
     }
   }
-  if (!bodyNode) bodyNode = doc.body;
-  const body = bodyNode ? blockElementToText(bodyNode) : "";
+  const body = bodyNode ? cleanReferenceBodyText(blockElementToText(bodyNode)) : "";
   return { title: title.slice(0, 200), body };
 }
 
@@ -986,6 +986,64 @@ function blockElementToText(element) {
     .replace(/ *\n */g, "\n")
     .replace(/\n{3,}/g, "\n\n")
     .trim();
+}
+
+function cleanReferenceBodyText(text) {
+  const blocked = [
+    "메뉴 바로가기", "본문 바로가기", "내 블로그", "이웃블로그", "블로그 홈", "로그인",
+    "RSS 2.0", "RSS 1.0", "ATOM 0.3", "해피빈", "모은콩", "콩저금통",
+    "안녕하세요.\n이 포스트는 네이버 블로그에서 작성된 게시글입니다.",
+    "글 보내기 서비스 안내", "네이버 여행 서비스가 종료되었습니다", "악성코드가 포함되어 있는 파일입니다",
+    "작성자 이외의 방문자에게는 이용이 제한되었습니다", "저작권 침해가 우려되는 컨텐츠",
+    "작성하신 게시글에 사용이 제한된 문구", "회원님의 안전한 서비스 이용을 위해 비밀번호",
+    "1일 안부글 작성횟수를 초과", "블로그 마켓 가입 완료", "이웃으로 추가하시겠어요"
+  ];
+  let cleaned = (text || "")
+    .replace(/\u00a0/g, " ")
+    .replace(/\r/g, "")
+    .replace(/[ \t]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+  blocked.forEach((phrase) => {
+    cleaned = cleaned.replaceAll(phrase, "");
+  });
+  return cleaned
+    .split("\n")
+    .map((line) => line.trim())
+    .filter((line) => line && !isNaverBoilerplateLine(line))
+    .join("\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function isNaverBoilerplateLine(line) {
+  return /^(메뉴 바로가기|본문 바로가기|내 블로그|이웃블로그|블로그 홈|로그인|블로그 메뉴|프롤로그|블로그|태그|안부|최근 \||인기|담아가기|내 카페에 담기|내PC 저장|N드라이브 저장|카메라 모델|해상도|노출시간|ISO감도|조리개값|초점길이|측광모드|촬영일시|고객센터|이웃추가|레이어 닫기)$/.test(line)
+    || /^\{[A-Z_]+\}$/.test(line);
+}
+
+function isLikelyArticleBody(text) {
+  if (!text || text.length < 180) return false;
+  const compact = text.replace(/\s+/g, "");
+  const badSignals = [
+    "메뉴바로가기본문바로가기", "이포스트는네이버블로그에서작성된게시글입니다",
+    "글보내기서비스안내", "저작권침해가우려되는컨텐츠", "악성코드가포함되어있는파일입니다",
+    "작성자이외의방문자에게는이용이제한되었습니다", "블로그마켓가입완료"
+  ];
+  const badScore = badSignals.filter((signal) => compact.includes(signal)).length;
+  if (badScore >= 1 && compact.length < 2500) return false;
+  if (badScore >= 2) return false;
+  const lines = text.split("\n").map((line) => line.trim()).filter(Boolean);
+  const usefulLines = lines.filter((line) => line.length >= 12 && !isNaverBoilerplateLine(line));
+  return usefulLines.length >= 3;
+}
+
+function isValidReferencePost(extracted) {
+  if (!extracted || !extracted.body) return false;
+  if (/^(이네의 자유로운 블로그|[^<>\n]{1,40}\s*블로그)$/.test((extracted.title || "").trim()) && extracted.body.length < 1200) {
+    return false;
+  }
+  return isLikelyArticleBody(extracted.body);
 }
 
 function clearResultData() {
