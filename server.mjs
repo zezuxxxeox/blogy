@@ -42,6 +42,47 @@ function sendNoContent(res) {
   res.end();
 }
 
+async function proxyFetch(res, rawUrl) {
+  let target;
+  try {
+    target = new URL(rawUrl);
+  } catch {
+    res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+    res.end("invalid url");
+    return;
+  }
+  if (target.protocol !== "http:" && target.protocol !== "https:") {
+    res.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
+    res.end("unsupported protocol");
+    return;
+  }
+
+  try {
+    const upstream = await fetch(target.href, {
+      redirect: "follow",
+      headers: {
+        "user-agent":
+          "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/123.0.0.0 Safari/537.36",
+        "accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+        "accept-language": "ko-KR,ko;q=0.9,en;q=0.8"
+      }
+    });
+    const body = await upstream.text();
+    res.writeHead(200, {
+      "content-type": "text/plain; charset=utf-8",
+      "cache-control": "no-store",
+      "access-control-allow-origin": "*"
+    });
+    res.end(body);
+  } catch (error) {
+    res.writeHead(502, {
+      "content-type": "text/plain; charset=utf-8",
+      "access-control-allow-origin": "*"
+    });
+    res.end(`fetch failed: ${error && error.message ? error.message : error}`);
+  }
+}
+
 function shutdownSoon() {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -65,6 +106,11 @@ const server = http.createServer((req, res) => {
   if (requestUrl.pathname === "/__shutdown") {
     sendNoContent(res);
     shutdownSoon();
+    return;
+  }
+
+  if (requestUrl.pathname === "/__fetch") {
+    proxyFetch(res, requestUrl.searchParams.get("url") || "");
     return;
   }
 

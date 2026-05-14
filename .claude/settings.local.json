@@ -1,0 +1,16 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(node --check app.js)",
+      "Bash(node --check server.mjs)",
+      "Bash(node --check service-worker.js)",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('app.js','utf8'\\).split\\('\\\\n'\\); for\\(let i=728;i<=738;i++\\){const l=s[i-1]||''; process.stdout.write\\(i+': '+JSON.stringify\\(l\\)+'\\\\n'\\);}\")",
+      "Bash(node -e \"const s=require\\('fs'\\).readFileSync\\('app.js','utf8'\\).split\\('\\\\n'\\); for\\(const i of [731,733]\\){const l=s[i-1]; process.stdout.write\\(i+': '+[...l].map\\(c=>{const cp=c.codePointAt\\(0\\); return cp>126||cp<32?'U+'+cp.toString\\(16\\):c}\\).join\\(''\\)+'\\\\n'\\);}\")",
+      "Bash(PORT=5199 node server.mjs)",
+      "Bash(curl -s \"http://127.0.0.1:5199/__fetch?url=notaurl\")",
+      "Bash(curl -s \"http://127.0.0.1:5199/__fetch?url=https://example.com\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" \"http://127.0.0.1:5199/index.html\")",
+      "Bash(curl -s \"http://127.0.0.1:5199/__shutdown\")"
+    ]
+  }
+}

@@ -129,6 +129,8 @@ function bindEvents() {
     saveSettings();
   });
 
+  $("#referenceText").addEventListener("blur", maybeImportReferenceUrl);
+
   $("#generateButton").addEventListener("click", generatePost);
   $("#copyRichButton").addEventListener("click", copyRichHtml);
   $("#copyHtmlButton").addEventListener("click", copyHtml);
@@ -136,6 +138,7 @@ function bindEvents() {
   $("#copyHtmlButtonMobile").addEventListener("click", copyHtml);
   $("#copyTextButton").addEventListener("click", copyPlainText);
   $("#downloadButton").addEventListener("click", downloadHtml);
+  $("#downloadPhotosButton")?.addEventListener("click", downloadAllPhotos);
 
   $$(".tab").forEach((tab) => {
     tab.addEventListener("click", () => setView(tab.dataset.view));
@@ -549,6 +552,9 @@ function updateUploadStatus(message) {
 }
 
 async function generatePost() {
+  if (!$("#noReferenceToggle").checked) {
+    await maybeImportReferenceUrl();
+  }
   const prompt = $("#userPrompt").value.trim();
   const references = $("#noReferenceToggle").checked ? "" : $("#referenceText").value.trim();
   const readyPhotos = getReadyPhotos();
@@ -595,6 +601,139 @@ async function generatePost() {
     lockUi(false);
     setProgress(false);
   }
+}
+
+// 레퍼런스 칸에 블로그 주소만 붙여넣었으면 서버 프록시로 받아 제목/본문만 추출한다.
+async function maybeImportReferenceUrl() {
+  const field = $("#referenceText");
+  if (!field || field.disabled) return;
+  const value = field.value.trim();
+  const urlMatch = value.match(/^https?:\/\/\S+$/i);
+  if (!urlMatch) return;
+  const url = urlMatch[0];
+
+  field.disabled = true;
+  setProgress(true, "블로그 글을 불러오는 중", 30);
+  try {
+    const extracted = await importReferenceFromUrl(url);
+    if (extracted && extracted.body) {
+      field.value = extracted.title
+        ? `${extracted.title}\n\n${extracted.body}`
+        : extracted.body;
+      showToast("블로그 제목과 본문만 가져왔습니다.");
+    } else {
+      showToast("본문을 찾지 못했습니다. 글 내용을 직접 붙여넣어 주세요.");
+    }
+  } catch (error) {
+    console.warn("reference url import failed", error);
+    showToast("주소를 불러오지 못했습니다. 글 내용을 직접 붙여넣어 주세요.");
+  } finally {
+    field.disabled = $("#noReferenceToggle").checked;
+    setProgress(false);
+  }
+}
+
+async function importReferenceFromUrl(url) {
+  const targets = buildReferenceFetchTargets(url);
+  let lastError = null;
+  for (const target of targets) {
+    try {
+      const response = await fetch(`/__fetch?url=${encodeURIComponent(target)}`, { cache: "no-store" });
+      if (!response.ok) {
+        lastError = new Error(`proxy ${response.status}`);
+        continue;
+      }
+      const html = await response.text();
+      const extracted = extractReferenceFromHtml(html);
+      if (extracted && extracted.body && extracted.body.length > 80) return extracted;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  if (lastError) throw lastError;
+  return null;
+}
+
+// 네이버 블로그 주소는 아이프레임 본문(PostView)으로 바꿔서 받아온다.
+function buildReferenceFetchTargets(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return [rawUrl];
+  }
+  const host = url.hostname.replace(/^www\./, "");
+  if (host === "blog.naver.com" || host === "m.blog.naver.com") {
+    let blogId = url.searchParams.get("blogId");
+    let logNo = url.searchParams.get("logNo");
+    if (!blogId || !logNo) {
+      const parts = url.pathname.split("/").filter(Boolean);
+      if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+        blogId = blogId || parts[0];
+        logNo = logNo || parts[1];
+      }
+    }
+    if (blogId && logNo) {
+      const id = encodeURIComponent(blogId);
+      const no = encodeURIComponent(logNo);
+      return [
+        `https://m.blog.naver.com/PostView.naver?blogId=${id}&logNo=${no}`,
+        `https://blog.naver.com/PostView.naver?blogId=${id}&logNo=${no}`
+      ];
+    }
+  }
+  return [rawUrl];
+}
+
+function extractReferenceFromHtml(html) {
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  doc.querySelectorAll("script, style, noscript, iframe, svg, nav, header, footer, aside, form, button").forEach((node) => node.remove());
+
+  const titleSelectors = [
+    ".se-title-text", ".se_title", ".se-module-text.se-title", ".pcol1", ".htitle",
+    ".tit_h3", ".se-fs-", "h1", "title"
+  ];
+  let title = "";
+  for (const selector of titleSelectors) {
+    const node = doc.querySelector(selector);
+    const text = node && node.textContent.replace(/\s+/g, " ").trim();
+    if (text && text.length >= 2) {
+      title = text.replace(/\s*[:|｜-]\s*네이버\s*블로그\s*$/i, "").trim();
+      break;
+    }
+  }
+
+  const bodySelectors = [
+    ".se-main-container", "#postViewArea", ".post_ct", "#viewTypeSelector",
+    ".se_component_wrap", "#content-area", "article", ".article", "#content"
+  ];
+  let bodyNode = null;
+  for (const selector of bodySelectors) {
+    const node = doc.querySelector(selector);
+    if (node && node.textContent.replace(/\s+/g, "").length > 80) {
+      bodyNode = node;
+      break;
+    }
+  }
+  if (!bodyNode) bodyNode = doc.body;
+  const body = bodyNode ? blockElementToText(bodyNode) : "";
+  return { title: title.slice(0, 200), body };
+}
+
+function blockElementToText(element) {
+  const clone = element.cloneNode(true);
+  clone.querySelectorAll("script, style, noscript").forEach((node) => node.remove());
+  clone.querySelectorAll("br").forEach((node) => node.replaceWith("\n"));
+  clone.querySelectorAll("p, div, li, h1, h2, h3, h4, h5, figure, figcaption, blockquote, section, tr").forEach((node) => {
+    node.appendChild(document.createTextNode("\n"));
+  });
+  return (clone.textContent || "")
+    .replace(/​/g, "")
+    .replace(/\r/g, "")
+    .replace(/[ \t ]+/g, " ")
+    .replace(/ *\n */g, "\n")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
 }
 
 function clearResultData() {
@@ -1984,6 +2123,8 @@ function renderResult() {
   $("#copyHtmlButtonMobile").disabled = !hasResult;
   $("#copyTextButton").disabled = !hasResult;
   $("#downloadButton").disabled = !hasResult;
+  const downloadPhotosButton = $("#downloadPhotosButton");
+  if (downloadPhotosButton) downloadPhotosButton.disabled = !hasResult;
 
   if (!hasResult) {
     $("#blogPreview").innerHTML = "";
@@ -2027,7 +2168,11 @@ function renderMatching() {
   `;
 
   const sectionOptions = state.result.sections.map((section) => `<option value="${escapeAttr(section.id)}">${escapeHtml(section.title)}</option>`).join("");
-  $("#matchList").innerHTML = readyPhotos.map((photo) => {
+  const isNaver = ($("#platformSelect")?.value || "naver") === "naver";
+  const hintHtml = isNaver
+    ? `<p class="match-hint"><strong>블로그용 복사</strong>를 누르면 글과 사진이 함께 붙습니다. 혹시 일부 사진이 안 들어가면, 그 사진의 <strong>이미지 복사</strong> 버튼을 눌러 네이버 본문 해당 위치에 따로 붙여넣으세요.</p>`
+    : "";
+  $("#matchList").innerHTML = hintHtml + readyPhotos.map((photo, index) => {
     const section = getSectionForPhoto(photo.id);
     const insight = state.result.photoInsights.find((item) => item.photoId === photo.id);
     const confidence = estimateConfidence(photo, section, insight);
@@ -2035,7 +2180,7 @@ function renderMatching() {
       <div class="match-row" data-photo-id="${escapeAttr(photo.id)}">
         <img src="${escapeAttr(photo.objectUrl)}" alt="${escapeAttr(photo.name)}">
         <div class="match-copy">
-          <h3>${escapeHtml(photo.name)}</h3>
+          <h3>사진 ${index + 1} · ${escapeHtml(photo.name)}</h3>
           <p>${escapeHtml(insight?.captionKo || photo.caption || "사진 설명 없음")}</p>
           <div class="seo-tags">${(insight?.visualKeywords || photo.visualTags).slice(0, 8).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
           <p><strong>배치:</strong> ${section ? escapeHtml(section.title) : "미배치"}</p>
@@ -2045,6 +2190,7 @@ function renderMatching() {
               <option value="">사용하지 않음</option>
               ${sectionOptions}
             </select>
+            <button class="copy-photo-button" type="button">이미지 복사</button>
             <span class="confidence ${confidence < 50 ? "low" : confidence < 72 ? "medium" : ""}">${confidence}%</span>
           </div>
         </div>
@@ -2066,6 +2212,7 @@ function renderMatching() {
       }
       renderResult();
     });
+    $(".copy-photo-button", row)?.addEventListener("click", () => copyPhotoImage(photoId));
   });
 }
 
@@ -2082,7 +2229,7 @@ function buildBlogHtml() {
       if (!photo || !photo.exportDataUrl) return "";
       const caption = insight?.captionKo || section.altText || photo.name;
       return `
-        <figure>
+        <figure data-blogy-photo="${escapeAttr(photoId)}">
           <img src="${photo.exportDataUrl}" alt="${escapeAttr(section.altText || caption)}">
           <figcaption>${escapeHtml(caption)}</figcaption>
         </figure>
@@ -2172,18 +2319,18 @@ function applyPreviewWidth() {
 
 async function copyRichHtml() {
   ensurePreviewHtml();
-  try {
-    const copied = copyRenderedPreview();
-    if (copied) {
-      showToast("글과 이미지를 함께 복사했습니다.");
-      return;
-    }
-  } catch (error) {
-    console.warn("Rendered copy failed", error);
-  }
 
-  const html = $("#blogPreview").innerHTML || buildBlogHtml();
+  // 네이버 에디터는 붙여넣기 HTML 안의 data: 이미지가 너무 크면 "지원하지 않는 형식"으로 막는다.
+  // 그래서 복사할 때 사진을 네이버 본문 폭에 맞게 줄여서 함께 넣어 붙여넣기 성공률을 높인다.
+  let html = "";
+  try {
+    html = await buildCopyHtml();
+  } catch (error) {
+    console.warn("buildCopyHtml failed", error);
+    html = $("#blogPreview").innerHTML || buildBlogHtml();
+  }
   const plain = htmlToPlainText(html);
+
   try {
     if (navigator.clipboard?.write && window.ClipboardItem) {
       await navigator.clipboard.write([
@@ -2192,15 +2339,125 @@ async function copyRichHtml() {
           "text/plain": new Blob([plain], { type: "text/plain" })
         })
       ]);
-      showToast("글과 이미지가 포함된 HTML을 복사했습니다.");
+      showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
       return;
     }
   } catch (error) {
     console.warn("ClipboardItem copy failed", error);
   }
 
+  try {
+    if (copyRenderedPreview()) {
+      showToast("글과 사진을 함께 복사했습니다.");
+      return;
+    }
+  } catch (error) {
+    console.warn("Rendered copy failed", error);
+  }
+
   await copyTextFallback(html);
   showToast("브라우저 제한으로 HTML 코드만 복사했습니다.");
+}
+
+// 미리보기(사용자 편집 내용 유지)의 사진을 붙여넣기용으로 줄인 버전으로 교체한다.
+async function buildCopyHtml() {
+  const template = document.createElement("template");
+  template.innerHTML = $("#blogPreview").innerHTML || buildBlogHtml();
+  const figures = [...template.content.querySelectorAll("figure[data-blogy-photo]")];
+  for (const figure of figures) {
+    const photo = getReadyPhotos().find((item) => item.id === figure.getAttribute("data-blogy-photo"));
+    const img = figure.querySelector("img");
+    if (!photo || !img) continue;
+    try {
+      img.setAttribute("src", await getClipboardImageUrl(photo));
+    } catch (error) {
+      console.warn("clipboard image resize failed", error);
+    }
+  }
+  return template.innerHTML.trim();
+}
+
+// 붙여넣기용 축소 이미지(네이버 본문 폭 기준). 사진별로 한 번만 만들고 재사용한다.
+function getClipboardImageUrl(photo) {
+  if (photo.clipboardDataUrl) return Promise.resolve(photo.clipboardDataUrl);
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const maxSide = 1200;
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      const ratio = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+      const width = Math.max(1, Math.round(sourceWidth * ratio));
+      const height = Math.max(1, Math.round(sourceHeight * ratio));
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, width, height);
+      ctx.drawImage(image, 0, 0, width, height);
+      photo.clipboardDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      resolve(photo.clipboardDataUrl);
+    };
+    image.onerror = () => reject(new Error("image load failed"));
+    image.src = photo.exportDataUrl;
+  });
+}
+
+async function copyPhotoImage(photoId) {
+  const photo = getReadyPhotos().find((item) => item.id === photoId);
+  if (!photo || !photo.exportDataUrl) {
+    showToast("이미지를 찾지 못했습니다.");
+    return;
+  }
+  try {
+    if (!navigator.clipboard?.write || !window.ClipboardItem) {
+      throw new Error("clipboard image unsupported");
+    }
+    const blob = await dataUrlToPngBlob(photo.exportDataUrl);
+    await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
+    showToast("이미지를 복사했습니다. 네이버 에디터에서 붙여넣으세요.");
+  } catch (error) {
+    console.warn("photo image copy failed", error);
+    showToast("이미지 복사를 지원하지 않는 브라우저입니다. '사진 저장'을 사용하세요.");
+  }
+}
+
+function dataUrlToPngBlob(dataUrl) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(image, 0, 0);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("toBlob failed"));
+      }, "image/png");
+    };
+    image.onerror = () => reject(new Error("image load failed"));
+    image.src = dataUrl;
+  });
+}
+
+function downloadAllPhotos() {
+  const photos = getReadyPhotos();
+  if (!photos.length) {
+    showToast("저장할 사진이 없습니다.");
+    return;
+  }
+  photos.forEach((photo, index) => {
+    const baseName = (photo.name || `photo-${index + 1}`).replace(/\.[^.]+$/, "");
+    const link = document.createElement("a");
+    link.href = photo.exportDataUrl;
+    link.download = `${String(index + 1).padStart(2, "0")}_${baseName}.jpg`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  });
+  showToast(`사진 ${photos.length}장을 저장했습니다. 네이버 에디터로 끌어다 놓아도 됩니다.`);
 }
 
 function ensurePreviewHtml() {

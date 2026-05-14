@@ -13,7 +13,7 @@
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="default">
     <meta name="apple-mobile-web-app-title" content="BLOGY">
-    <link rel="stylesheet" href="./styles.css?v=41">
+    <link rel="stylesheet" href="./styles.css?v=42">
   </head>
   <body>
     <div class="splash-screen" aria-hidden="true">
@@ -149,7 +149,7 @@
           </div>
           <label>
             참고할 블로그 글
-            <textarea id="referenceText" rows="10"></textarea>
+            <textarea id="referenceText" rows="10" placeholder="블로그 글 내용을 붙여넣거나, 네이버 블로그 글 주소(링크)만 붙여넣으면 제목과 본문만 자동으로 가져옵니다."></textarea>
           </label>
           <label class="toggle-row">
             <input id="noReferenceToggle" type="checkbox">
@@ -201,6 +201,7 @@
           <div class="result-actions">
             <button class="primary-button" id="copyRichButtonMobile" type="button" disabled>블로그용 복사</button>
             <button class="ghost-button" id="copyHtmlButtonMobile" type="button" disabled>HTML 복사</button>
+            <button class="ghost-button" id="downloadPhotosButton" type="button" disabled>사진 저장</button>
           </div>
         </section>
 
@@ -220,7 +221,7 @@
     </main>
 
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
-    <script src="./app.js?v=41" defer></script>
+    <script src="./app.js?v=42" defer></script>
     <script>
       (() => {
         const heartbeat = () => {
