@@ -1,0 +1,8 @@
+#!/bin/bash
+
+set -e
+
+APP_DIR="$(cd "$(dirname "$0")/../.." && pwd)"
+PROJECT_DIR="$(cd "$APP_DIR/.." && pwd)"
+
+exec /bin/bash "$PROJECT_DIR/Start-BLOGY.command"

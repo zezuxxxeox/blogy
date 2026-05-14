@@ -1,0 +1,3 @@
+*.command text eol=lf
+*.terminal text eol=lf
+BLOGY.app/Contents/MacOS/* text eol=lf
