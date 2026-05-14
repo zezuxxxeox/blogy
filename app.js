@@ -840,7 +840,7 @@ ${rawRef || "(없음)"}
 
 function buildFactDirective(brief) {
   const searchMode = brief.searchGrounding
-    ? "Google Search grounding is enabled. Search with exact keywords built from the place name, required keywords, menu, price, hours, address, and recent blog-review terms."
+    ? "Google Search grounding is enabled. Search with exact Korean keywords built from the neighborhood/dong, place name, menu, price, hours, address, Naver Map, and recent blog-review terms."
     : "Search grounding is disabled. Use only user-provided verified facts, photos, and reference text.";
   return `
 [FACT SAFETY RULES]
@@ -849,7 +849,13 @@ ${searchMode}
 - If the topic is a restaurant, cafe, shop, clinic, product, price, menu, operating hour, address, parking, reservation, or policy, use only facts found in verifiedFacts, the user's reference text, visible photo evidence, or grounded search results.
 - Never invent menu names, prices, addresses, phone numbers, opening hours, parking rules, reservation rules, brand history, awards, or promotions.
 - If a fact is not verified, omit it or write in Korean that it should be checked before visiting. Do not fill blanks with plausible guesses.
-- Use the place name as the main search keyword when available: "${brief.placeName || ""}".
+- Use the place name as the main search keyword when available: "${brief.placeName || ""}". If it contains a neighborhood/dong and shop name, treat that full string as the exact primary query.
+- For restaurant/cafe posts, try exact search-query intents such as "${brief.placeName || "동 가게명"} 메뉴", "${brief.placeName || "동 가게명"} 가격", "${brief.placeName || "동 가게명"} 네이버지도", "${brief.placeName || "동 가게명"} 영업시간", and "${brief.placeName || "동 가게명"} 블로그".
+- For prices, use only the newest available source. Prefer official/Naver Map menu data, current menu photos, recent receipt photos, or recent reviews with visible dates.
+- Do not use prices from old blog posts or undated pages. If the search result date is unclear, treat the price as unverified.
+- When searching prices, include freshness terms such as "최신", "최근", "2026", "메뉴판", "영수증", and "네이버지도" with the exact place query.
+- If multiple recent sources disagree on prices or hours, either use the newest dated official/Naver Map source or omit the exact number and write that visit-time confirmation is needed.
+- If a Naver Map result, official page, recent menu photo, recent receipt photo, or recent review confirms a menu/price, you may use it. If search results only imply it vaguely, do not state it as fact.
 - When the prompt is short, supplement the article with patterns and common review angles from grounded search/reference material, but do not present unverified details as facts.
 - Keep the final body around ${brief.targetWordCount} Korean characters, excluding HTML tags.
 - Do not create a table of contents.
