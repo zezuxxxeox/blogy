@@ -83,6 +83,49 @@ async function proxyFetch(res, rawUrl) {
   }
 }
 
+async function proxyOpenAI(req, res) {
+  if (req.method !== "POST") {
+    res.writeHead(405, { "content-type": "text/plain; charset=utf-8" });
+    res.end("method not allowed");
+    return;
+  }
+
+  const apiKey = req.headers.authorization || "";
+  if (!apiKey.toLowerCase().startsWith("bearer ")) {
+    res.writeHead(401, { "content-type": "text/plain; charset=utf-8" });
+    res.end("missing authorization");
+    return;
+  }
+
+  const chunks = [];
+  req.on("data", (chunk) => chunks.push(chunk));
+  req.on("end", async () => {
+    try {
+      const upstream = await fetch("https://api.openai.com/v1/responses", {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "authorization": apiKey
+        },
+        body: Buffer.concat(chunks)
+      });
+      const body = await upstream.text();
+      res.writeHead(upstream.status, {
+        "content-type": upstream.headers.get("content-type") || "application/json; charset=utf-8",
+        "cache-control": "no-store",
+        "access-control-allow-origin": "*"
+      });
+      res.end(body);
+    } catch (error) {
+      res.writeHead(502, {
+        "content-type": "text/plain; charset=utf-8",
+        "access-control-allow-origin": "*"
+      });
+      res.end(`openai proxy failed: ${error && error.message ? error.message : error}`);
+    }
+  });
+}
+
 function shutdownSoon() {
   if (shuttingDown) return;
   shuttingDown = true;
@@ -111,6 +154,11 @@ const server = http.createServer((req, res) => {
 
   if (requestUrl.pathname === "/__fetch") {
     proxyFetch(res, requestUrl.searchParams.get("url") || "");
+    return;
+  }
+
+  if (requestUrl.pathname === "/__openai") {
+    proxyOpenAI(req, res);
     return;
   }
 

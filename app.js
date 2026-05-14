@@ -24,6 +24,8 @@ const state = {
     provider: "gemini",
     geminiModel: "gemini-2.5-flash",
     geminiKey: "",
+    openaiModel: "gpt-5.1",
+    openaiKey: "",
     noReference: false,
     usePlaceSearch: true,
     wordCount: 1800,
@@ -71,6 +73,7 @@ function bindRuntimeErrorFeedback() {
 function bindEvents() {
   $("#providerSelect").addEventListener("change", () => {
     state.settings.provider = $("#providerSelect").value;
+    hydrateProviderFields();
     updateProviderStatus();
     updateSavedSettingState();
   });
@@ -158,7 +161,7 @@ function loadSettings() {
   } catch {
     state.settings = { ...state.settings };
   }
-  if (state.settings.provider !== "gemini") {
+  if (!["gemini", "openai"].includes(state.settings.provider)) {
     state.settings.provider = "gemini";
   }
 }
@@ -169,8 +172,13 @@ function saveSettings() {
 
 function persistSettingsFromControls(showMessage = false) {
   state.settings.provider = $("#providerSelect").value;
-  state.settings.geminiKey = $("#geminiKey").value.trim();
-  state.settings.geminiModel = $("#geminiModel").value.trim() || "gemini-2.5-flash";
+  if (state.settings.provider === "openai") {
+    state.settings.openaiKey = $("#geminiKey").value.trim();
+    state.settings.openaiModel = $("#geminiModel").value.trim() || "gpt-5.1";
+  } else {
+    state.settings.geminiKey = $("#geminiKey").value.trim();
+    state.settings.geminiModel = $("#geminiModel").value.trim() || "gemini-2.5-flash";
+  }
   state.settings.noReference = $("#noReferenceToggle").checked;
   state.settings.usePlaceSearch = $("#searchGroundingToggle").checked;
   state.settings.wordCount = parseTargetWordCount();
@@ -189,9 +197,8 @@ function persistSettingsFromControls(showMessage = false) {
 }
 
 function hydrateSettings() {
-  $("#providerSelect").value = "gemini";
-  $("#geminiKey").value = state.settings.geminiKey;
-  $("#geminiModel").value = state.settings.geminiModel;
+  $("#providerSelect").value = state.settings.provider || "gemini";
+  hydrateProviderFields();
   $("#noReferenceToggle").checked = Boolean(state.settings.noReference);
   $("#searchGroundingToggle").checked = state.settings.usePlaceSearch !== false;
   const savedWordCount = String(state.settings.wordCount || 1800);
@@ -207,6 +214,18 @@ function hydrateSettings() {
   updateWordCountControls();
   updatePlaceControls();
   updateSavedSettingState();
+}
+
+function hydrateProviderFields() {
+  const provider = $("#providerSelect").value;
+  if (provider === "openai") {
+    $("#geminiKey").value = state.settings.openaiKey || "";
+    $("#geminiModel").value = state.settings.openaiModel || "gpt-5.1";
+  } else {
+    $("#geminiKey").value = state.settings.geminiKey || "";
+    $("#geminiModel").value = state.settings.geminiModel || "gemini-2.5-flash";
+  }
+  updateProviderStatus();
 }
 
 function updateReferenceControls() {
@@ -225,6 +244,24 @@ function updateProviderStatus() {
   const provider = $("#providerSelect").value;
   const hasKey = $("#geminiKey").value.trim().length > 0;
   const label = $("#apiModeLabel");
+  const keyLabel = $("#apiKeyLabel");
+  const keyLink = $("#apiKeyLink");
+  if (provider === "openai") {
+    if (keyLabel) keyLabel.textContent = "OpenAI API Key";
+    if (keyLink) {
+      keyLink.textContent = "키 만들기";
+      keyLink.href = "https://platform.openai.com/api-keys";
+    }
+    if (label) label.textContent = hasKey ? "OpenAI 입력 완료" : "입력 필요";
+    return;
+  }
+  if (keyLabel) keyLabel.textContent = "Gemini API Key";
+  if (keyLink) {
+    keyLink.textContent = "무료 키 만들기";
+    keyLink.href = "https://aistudio.google.com/app/apikey";
+  }
+  if (label) label.textContent = hasKey ? "Gemini 입력 완료" : "입력 필요";
+  return;
   if (provider === "gemini") {
     if (label) label.textContent = hasKey ? "고품질 AI 활성" : "키 필요";
   } else {
@@ -553,7 +590,8 @@ function updateUploadStatus(message) {
 
 async function generatePost() {
   if (!$("#noReferenceToggle").checked) {
-    await maybeImportReferenceUrl();
+    const referenceReady = await maybeImportReferenceUrl();
+    if (referenceReady === false) return;
   }
   const prompt = $("#userPrompt").value.trim();
   const references = $("#noReferenceToggle").checked ? "" : $("#referenceText").value.trim();
@@ -580,7 +618,9 @@ async function generatePost() {
 
   try {
     const brief = collectBrief();
-    if (state.settings.provider === "gemini" && state.settings.geminiKey) {
+    if (state.settings.provider === "openai" && state.settings.openaiKey) {
+      state.result = await generateWithOpenAI(brief);
+    } else if (state.settings.provider === "gemini" && state.settings.geminiKey) {
       state.result = await generateWithGemini(brief);
     } else {
       state.result = generateLocally(brief);
@@ -606,11 +646,34 @@ async function generatePost() {
 // 레퍼런스 칸에 블로그 주소만 붙여넣었으면 서버 프록시로 받아 제목/본문만 추출한다.
 async function maybeImportReferenceUrl() {
   const field = $("#referenceText");
-  if (!field || field.disabled) return;
+  if (!field || field.disabled) return true;
   const value = field.value.trim();
-  const urlMatch = value.match(/^https?:\/\/\S+$/i);
-  if (!urlMatch) return;
-  const url = urlMatch[0];
+  const url = getSingleReferenceUrl(value);
+  if (!url) return true;
+
+  if (isLikelyReferenceCollectionUrl(url)) {
+    field.disabled = true;
+    setProgress(true, "블로그 카테고리 글을 불러오는 중", 30);
+    try {
+      const extracted = await importReferenceCollectionFromUrl(url);
+      if (extracted.posts.length) {
+        field.value = formatReferenceCollection(extracted);
+        showToast(`${extracted.posts.length}개 글의 제목과 본문을 가져왔습니다.`);
+        return true;
+      } else {
+        showToast("카테고리에서 글을 찾지 못했습니다. 글 주소나 본문을 넣어주세요.");
+        return false;
+      }
+    } catch (error) {
+      console.warn("reference collection import failed", error);
+      showToast("카테고리 글을 불러오지 못했습니다. 글 주소나 본문을 넣어주세요.");
+      return false;
+    } finally {
+      field.disabled = $("#noReferenceToggle").checked;
+      setProgress(false);
+    }
+    return false;
+  }
 
   field.disabled = true;
   setProgress(true, "블로그 글을 불러오는 중", 30);
@@ -621,12 +684,15 @@ async function maybeImportReferenceUrl() {
         ? `${extracted.title}\n\n${extracted.body}`
         : extracted.body;
       showToast("블로그 제목과 본문만 가져왔습니다.");
+      return true;
     } else {
       showToast("본문을 찾지 못했습니다. 글 내용을 직접 붙여넣어 주세요.");
+      return false;
     }
   } catch (error) {
     console.warn("reference url import failed", error);
     showToast("주소를 불러오지 못했습니다. 글 내용을 직접 붙여넣어 주세요.");
+    return false;
   } finally {
     field.disabled = $("#noReferenceToggle").checked;
     setProgress(false);
@@ -654,6 +720,200 @@ async function importReferenceFromUrl(url) {
   return null;
 }
 
+async function importReferenceCollectionFromUrl(url) {
+  const listTargets = buildReferenceCollectionTargets(url);
+  const links = [];
+  let lastError = null;
+
+  for (const target of listTargets) {
+    try {
+      const response = await fetch(`/__fetch?url=${encodeURIComponent(target)}`, { cache: "no-store" });
+      if (!response.ok) {
+        lastError = new Error(`proxy ${response.status}`);
+        continue;
+      }
+      const html = await response.text();
+      links.push(...extractPostLinksFromListHtml(html, target, url));
+      if (links.length >= 8) break;
+    } catch (error) {
+      lastError = error;
+    }
+  }
+
+  const posts = [];
+  for (const postUrl of unique(links).slice(0, 8)) {
+    try {
+      const extracted = await importReferenceFromUrl(postUrl);
+      if (extracted && extracted.body && extracted.body.length > 80) {
+        posts.push({ url: postUrl, title: extracted.title || "", body: extracted.body });
+      }
+    } catch (error) {
+      console.warn("reference post import failed", postUrl, error);
+    }
+    if (posts.length >= 5) break;
+  }
+
+  if (!posts.length && lastError) throw lastError;
+  return { sourceUrl: url, posts };
+}
+
+function formatReferenceCollection(collection) {
+  const posts = collection.posts || [];
+  return posts.map((post, index) => {
+    const title = post.title ? `제목: ${post.title}` : "제목: (제목 없음)";
+    const body = post.body.replace(/\n{3,}/g, "\n\n").slice(0, 6000);
+    return `[카테고리 참고글 ${index + 1}]\n${title}\n본문:\n${body}`;
+  }).join("\n\n---\n\n");
+}
+
+function buildReferenceCollectionTargets(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return [rawUrl];
+  }
+  const targets = [url.href];
+  const host = url.hostname.replace(/^www\./, "");
+  if (host === "blog.naver.com" || host === "m.blog.naver.com") {
+    const identity = getNaverBlogPostIdentity(rawUrl);
+    const blogId = identity?.blogId || url.searchParams.get("blogId");
+    const categoryNo = url.searchParams.get("categoryNo");
+    if (blogId) {
+      const id = encodeURIComponent(blogId);
+      const categoryQuery = categoryNo ? `&categoryNo=${encodeURIComponent(categoryNo)}` : "";
+      targets.push(
+        `https://m.blog.naver.com/PostList.naver?blogId=${id}${categoryQuery}`,
+        `https://blog.naver.com/PostList.naver?blogId=${id}${categoryQuery}`,
+        `https://m.blog.naver.com/${id}${categoryNo ? `?categoryNo=${encodeURIComponent(categoryNo)}` : ""}`,
+        `https://blog.naver.com/${id}${categoryNo ? `?categoryNo=${encodeURIComponent(categoryNo)}` : ""}`
+      );
+    }
+  }
+  return unique(targets);
+}
+
+function extractPostLinksFromListHtml(html, fetchedUrl, originalUrl) {
+  const links = [];
+  const doc = new DOMParser().parseFromString(html, "text/html");
+  const originalIdentity = getNaverBlogPostIdentity(originalUrl);
+  const originalHost = getNormalizedHost(originalUrl);
+
+  doc.querySelectorAll("a[href]").forEach((anchor) => {
+    const href = normalizeUrl(anchor.getAttribute("href"), fetchedUrl);
+    if (isSameReferencePostLink(href, originalIdentity, originalHost)) links.push(href);
+  });
+
+  const normalizedHtml = html
+    .replace(/\\u002F/g, "/")
+    .replace(/&amp;/g, "&")
+    .replace(/&quot;/g, "\"");
+  const blogId = originalIdentity?.blogId;
+  const logNoMatches = normalizedHtml.matchAll(/(?:logNo=|logNo["']?\s*:\s*["']?)(\d{5,})/g);
+  for (const match of logNoMatches) {
+    if (blogId) links.push(`https://m.blog.naver.com/PostView.naver?blogId=${encodeURIComponent(blogId)}&logNo=${match[1]}`);
+  }
+  if (blogId) {
+    const pathPattern = new RegExp(`(?:https?:)?//m?\\.?blog\\.naver\\.com/${escapeRegExp(blogId)}/(\\d{5,})`, "g");
+    for (const match of normalizedHtml.matchAll(pathPattern)) {
+      links.push(`https://m.blog.naver.com/${encodeURIComponent(blogId)}/${match[1]}`);
+    }
+  }
+
+  return unique(links).slice(0, 12);
+}
+
+function normalizeUrl(href, baseUrl) {
+  if (!href) return "";
+  try {
+    return new URL(href.replace(/&amp;/g, "&"), baseUrl).href;
+  } catch {
+    return "";
+  }
+}
+
+function getNormalizedHost(rawUrl) {
+  try {
+    return new URL(rawUrl).hostname.replace(/^www\./, "");
+  } catch {
+    return "";
+  }
+}
+
+function isSameReferencePostLink(rawUrl, originalIdentity, originalHost) {
+  if (!rawUrl) return false;
+  const identity = getNaverBlogPostIdentity(rawUrl);
+  if (originalIdentity?.blogId) {
+    return Boolean(identity?.blogId === originalIdentity.blogId && identity.logNo);
+  }
+  try {
+    const url = new URL(rawUrl);
+    return url.hostname.replace(/^www\./, "") === originalHost && !isLikelyReferenceCollectionUrl(rawUrl);
+  } catch {
+    return false;
+  }
+}
+
+function getSingleReferenceUrl(value) {
+  const trimmed = (value || "").trim();
+  const urlMatch = trimmed.match(/^https?:\/\/\S+$/i);
+  return urlMatch ? stripTrailingUrlPunctuation(urlMatch[0]) : "";
+}
+
+function getReferenceUrls(value) {
+  const matches = (value || "").match(/https?:\/\/[^\s<>"']+/gi) || [];
+  return unique(matches.map(stripTrailingUrlPunctuation)).slice(0, 8);
+}
+
+function stripTrailingUrlPunctuation(value) {
+  return (value || "").replace(/[),.\]]+$/g, "");
+}
+
+function escapeRegExp(value) {
+  return String(value || "").replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function getNaverBlogPostIdentity(rawUrl) {
+  let url;
+  try {
+    url = new URL(rawUrl);
+  } catch {
+    return null;
+  }
+  const host = url.hostname.replace(/^www\./, "");
+  if (host !== "blog.naver.com" && host !== "m.blog.naver.com") return null;
+  let blogId = url.searchParams.get("blogId");
+  let logNo = url.searchParams.get("logNo");
+  const parts = url.pathname.split("/").filter(Boolean);
+  if (!blogId && parts.length >= 1) {
+    blogId = parts[0];
+  }
+  if (!logNo) {
+    if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
+      logNo = parts[1];
+    }
+  }
+  return { blogId, logNo };
+}
+
+function isNaverBlogCollectionUrl(rawUrl) {
+  const identity = getNaverBlogPostIdentity(rawUrl);
+  if (!identity) return false;
+  return !identity.logNo;
+}
+
+function isLikelyReferenceCollectionUrl(rawUrl) {
+  if (isNaverBlogCollectionUrl(rawUrl)) return true;
+  try {
+    const url = new URL(rawUrl);
+    const path = decodeURIComponent(url.pathname).toLowerCase();
+    if (url.searchParams.has("categoryNo") || url.searchParams.has("category")) return true;
+    return /\/(category|categories|tag|tags|archive|archives|search)(\/|$)/i.test(path);
+  } catch {
+    return false;
+  }
+}
+
 // 네이버 블로그 주소는 아이프레임 본문(PostView)으로 바꿔서 받아온다.
 function buildReferenceFetchTargets(rawUrl) {
   let url;
@@ -664,15 +924,7 @@ function buildReferenceFetchTargets(rawUrl) {
   }
   const host = url.hostname.replace(/^www\./, "");
   if (host === "blog.naver.com" || host === "m.blog.naver.com") {
-    let blogId = url.searchParams.get("blogId");
-    let logNo = url.searchParams.get("logNo");
-    if (!blogId || !logNo) {
-      const parts = url.pathname.split("/").filter(Boolean);
-      if (parts.length >= 2 && /^\d+$/.test(parts[1])) {
-        blogId = blogId || parts[0];
-        logNo = logNo || parts[1];
-      }
-    }
+    const { blogId, logNo } = getNaverBlogPostIdentity(rawUrl) || {};
     if (blogId && logNo) {
       const id = encodeURIComponent(blogId);
       const no = encodeURIComponent(logNo);
@@ -776,6 +1028,7 @@ function collectBrief() {
     rawPrompt,
     references: finalReferences,
     rawReferences,
+    referenceUrls: getReferenceUrls(finalReferences),
     referenceWeight,
     referenceAnalysis,
     tone: $("#toneSelect").value,
@@ -809,6 +1062,7 @@ async function generateWithGemini(brief) {
   const endpoint = `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${encodeURIComponent(state.settings.geminiKey)}`;
   const photosForApi = getReadyPhotos().slice(0, MAX_API_IMAGES);
   const textPrompt = buildGeminiPrompt(brief, photosForApi.length);
+  const needsGrounding = brief.usePlaceSearch;
   const parts = [{ text: textPrompt }];
 
   photosForApi.forEach((photo) => {
@@ -823,13 +1077,13 @@ async function generateWithGemini(brief) {
   const requestBody = {
     contents: [{ role: "user", parts }],
     generationConfig: {
-      temperature: brief.usePlaceSearch ? 0.38 : 0.62,
+      temperature: needsGrounding ? 0.38 : 0.62,
       topP: 0.82,
       responseMimeType: "application/json"
     }
   };
 
-  if (brief.usePlaceSearch) {
+  if (needsGrounding) {
     requestBody.tools = [{ googleSearch: {} }];
   }
 
@@ -842,7 +1096,7 @@ async function generateWithGemini(brief) {
   setProgress(true, "AI 결과를 정리하는 중", 72);
   if (!response.ok) {
     const text = await response.text();
-    if (brief.usePlaceSearch && response.status === 400) {
+    if (needsGrounding && response.status === 400) {
       const fallbackBody = { ...requestBody };
       delete fallbackBody.tools;
       response = await fetch(endpoint, {
@@ -867,6 +1121,65 @@ async function generateWithGemini(brief) {
   parsed.provider = "gemini";
   parsed.sourceNote = `Gemini ${state.settings.geminiModel} 무료 티어 기반`;
   return parsed;
+}
+
+async function generateWithOpenAI(brief) {
+  setProgress(true, "OpenAI가 사진 맥락을 읽는 중", 28);
+  const model = state.settings.openaiModel || "gpt-5.1";
+  const photosForApi = getReadyPhotos().slice(0, MAX_API_IMAGES);
+  const textPrompt = buildGeminiPrompt(brief, photosForApi.length);
+  const content = [{ type: "input_text", text: textPrompt }];
+
+  photosForApi.forEach((photo) => {
+    content.push({
+      type: "input_image",
+      image_url: `data:${photo.mime};base64,${photo.apiBase64}`,
+      detail: "auto"
+    });
+  });
+
+  const requestBody = {
+    model,
+    input: [{ role: "user", content }],
+    reasoning: { effort: "low" },
+    text: { format: { type: "json_object" } },
+    max_output_tokens: 12000
+  };
+
+  const response = await fetch("/__openai", {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "Authorization": `Bearer ${state.settings.openaiKey}`
+    },
+    body: JSON.stringify(requestBody)
+  });
+
+  setProgress(true, "AI 결과를 정리하는 중", 72);
+  if (!response.ok) {
+    const text = await response.text();
+    throw new Error(`OpenAI API ${response.status}: ${text.slice(0, 220)}`);
+  }
+
+  const payload = await response.json();
+  const text = extractOpenAIResponseText(payload);
+  if (!text) throw new Error("OpenAI 응답에 본문이 없습니다.");
+  const parsed = parseJsonResponse(text);
+  parsed.provider = "openai";
+  parsed.sourceNote = `OpenAI ${model} 기반`;
+  return parsed;
+}
+
+function extractOpenAIResponseText(payload) {
+  if (payload?.output_text) return payload.output_text.trim();
+  const chunks = [];
+  (payload?.output || []).forEach((item) => {
+    (item?.content || []).forEach((part) => {
+      if (part?.type === "output_text" && part.text) chunks.push(part.text);
+      if (part?.type === "text" && part.text) chunks.push(part.text);
+    });
+  });
+  return chunks.join("\n").trim();
 }
 
 function buildGeminiPrompt(brief, photoCount) {
@@ -898,6 +1211,9 @@ ${factDirective}
 중요 원칙:
 - 사진과 글 섹션의 맥락이 같을 때만 매칭한다. 애매하면 targetPhotoIds를 비워두고 이유를 쓴다.
 - 사진을 억지로 끼워 넣지 않는다. 한 사진은 가능하면 한 섹션에만 배치한다.
+- 사진을 설명문처럼 따로 묘사하지 말고, 사진에서 보이는 단서를 글의 주장/경험/동선에 자연스럽게 연결한다.
+- photoInsights.captionKo는 사진의 외형 설명이 아니라 본문에 이어 붙일 수 있는 맥락 문장으로 쓴다. 예: "이 장면은 입구 첫인상을 보여준다", "메뉴 선택 이유를 설명할 때 근거로 쓰기 좋다".
+- draftHtml 안에서는 "사진에서 보이는..." 같은 캡션식 문장을 반복하지 말고, 해당 섹션의 이야기 속에서 사진이 뒷받침하는 포인트를 자연스럽게 풀어낸다.
 - 사용자의 프롬프트, 레퍼런스, 사진 메모는 음성 인식으로 입력되어 단어가 틀렸을 수 있다. 원문을 그대로 믿지 말고 문맥, 사진, 파일명, 레퍼런스 흐름을 함께 보고 의도한 단어로 보정한다.
 - 사진에서 보이는 대상과 rawUserNote가 충돌하면 사진과 normalizedUserNote를 우선 비교하고, 확실하지 않은 보정은 단정하지 않는다.
 - 레퍼런스 반영 강도가 높거나 엄격하면 레퍼런스를 먼저 분석하고, 그 글의 소제목 순서, 문단 호흡, 정보 배치, 결론 방식, 말투를 새 주제에 이식한다.
@@ -937,10 +1253,11 @@ ${factDirective}
   "photoInsights": [
     {
       "photoId": "입력 photo id",
-      "captionKo": "사진을 구체적으로 설명하는 한 문장",
+      "captionKo": "사진 외형 설명이 아니라 본문 흐름에 연결되는 맥락 문장",
       "visualKeywords": ["키워드"],
       "mood": "분위기",
       "bestUse": "대표/도입/상세/증거/마무리 중 하나",
+      "contextBridge": "이 사진이 어떤 문단 내용과 연결되는지",
       "avoidReason": ""
     }
   ],
@@ -1079,9 +1396,13 @@ function buildReferenceDirective(brief, styleGuide) {
   if (!brief.references.trim()) {
     return `레퍼런스가 없으면 사용자 프롬프트와 사진 기준으로 작성한다. 해시태그는 정확히 ${brief.hashtagCount}개만 만든다.`;
   }
+  const collectionNote = brief.references.includes("[카테고리 참고글")
+    ? "- 레퍼런스는 사용자가 넣은 블로그/카테고리 주소에서 추출한 여러 글의 제목과 본문이다. 외부 검색을 추가하지 말고 이 추출 본문들만 분석해서 공통 구조와 톤을 따른다."
+    : "";
   if (brief.referenceWeight === "strict") {
     return `
 [레퍼런스 엄격 전사 모드]
+${collectionNote}
 - 먼저 레퍼런스의 제목 형식, 소제목 형식, 섹션 순서, 문단 길이, 이모지 위치, 말투를 분석한 뒤 새 주제에 이식한다.
 - seo.title은 레퍼런스 제목을 복사하지 말고 같은 포맷만 복제한다. 예: 괄호/파이프/슬래시/질문형/느낌표/이모지 위치를 그대로 유지한다.
 - sections는 레퍼런스 outline 순서와 역할을 따른다. 레퍼런스의 1번째 소제목 역할은 결과의 1번째 소제목 역할이 되어야 한다.
@@ -1096,6 +1417,7 @@ ${styleGuide}
   if (brief.referenceWeight === "high") {
     return `
 [레퍼런스 구조 우선 모드]
+${collectionNote}
 - 레퍼런스의 소제목 순서, 제목 장식, 문단 리듬, 이모지 위치를 가능한 한 따른다.
 - 내용은 새 주제와 사진에 맞게 쓰되 구조와 무드는 레퍼런스에 가깝게 유지한다.
 - seo.tags는 정확히 ${brief.hashtagCount}개만 반환한다.
@@ -1104,6 +1426,7 @@ ${styleGuide}
   }
   return `
 [레퍼런스 참고 모드]
+${collectionNote}
 - 레퍼런스는 주제 흐름과 톤 참고용으로만 사용한다.
 - seo.tags는 정확히 ${brief.hashtagCount}개만 반환한다.
 `.trim();
@@ -1941,12 +2264,14 @@ function makeLocalPhotoInsight(photo, brief = null) {
   const visualKeywords = unique([...filenameTokens, ...photo.visualTags, ...extractKeywords(normalizedNote)]).slice(0, 10);
   const mood = photo.brightness > 170 ? "밝고 선명함" : photo.brightness < 95 ? "차분하고 밀도 있음" : "균형 잡힌 분위기";
   const bestUse = photo.width > photo.height ? "대표" : "상세";
+  const bridge = normalizedNote || visualKeywords.slice(0, 3).join(", ") || photo.name.replace(/\.[^.]+$/, "");
   return {
     photoId: photo.id,
-    captionKo: `${normalizedNote || photo.name.replace(/\.[^.]+$/, "")} 사진`,
+    captionKo: `${bridge}를 설명하는 문단과 자연스럽게 이어지는 장면`,
     visualKeywords,
     mood,
     bestUse,
+    contextBridge: bridge,
     avoidReason: ""
   };
 }
@@ -2159,7 +2484,7 @@ function renderMatching() {
   const matchedPhotos = readyPhotos.filter((photo) => getSectionForPhoto(photo.id)).length;
   const sectionsWithPhotos = state.result.sections.filter((section) => section.targetPhotoIds.length).length;
   const lowConfidence = calculateLowConfidence();
-  const referenceFaithfulness = state.result.referenceStyle?.faithfulness || (state.result.provider === "gemini" ? 80 : 65);
+  const referenceFaithfulness = state.result.referenceStyle?.faithfulness || (state.result.provider === "local" ? 65 : 80);
   $("#qualityGrid").innerHTML = `
     <div class="quality-card"><span>사진 사용</span><strong>${matchedPhotos}/${totalPhotos}</strong></div>
     <div class="quality-card"><span>사진 있는 섹션</span><strong>${sectionsWithPhotos}</strong></div>
@@ -2280,7 +2605,7 @@ function estimateConfidence(photo, section, insight) {
   const photoTokens = new Set(extractKeywords(`${photo.name} ${photo.note} ${(insight?.captionKo || "")} ${(insight?.visualKeywords || []).join(" ")} ${photo.visualTags.join(" ")}`));
   const sectionTokens = new Set(extractKeywords(`${section.title} ${section.intent} ${stripHtml(section.draftHtml)} ${section.keywordAnchors.join(" ")}`));
   const overlap = [...photoTokens].filter((token) => sectionTokens.has(token)).length;
-  const base = state.result.provider === "gemini" ? 62 : 42;
+  const base = state.result.provider === "local" ? 42 : 62;
   return clamp(base + overlap * 9 + scoreVisualFit(photo, section, insight) * 4, section.photoRationale ? 38 : 24, 97);
 }
 
