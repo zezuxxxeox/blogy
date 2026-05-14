@@ -1,0 +1,10 @@
+{
+  "name": "blogy",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs",
+    "shortcut": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\\Create-BLOGY-Shortcut.ps1"
+  }
+}

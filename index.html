@@ -1,0 +1,210 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>BLOGY</title>
+    <meta name="description" content="사진과 레퍼런스로 블로그 초안을 만드는 BLOGY">
+    <link rel="manifest" href="./manifest.webmanifest">
+    <meta name="theme-color" content="#111111">
+    <link rel="icon" href="./assets/blogy-icon-64.png" type="image/png">
+    <link rel="apple-touch-icon" href="./assets/blogy-icon-192.png">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="default">
+    <meta name="apple-mobile-web-app-title" content="BLOGY">
+    <link rel="stylesheet" href="./styles-green.css?v=26">
+  </head>
+  <body>
+    <div class="splash-screen" aria-hidden="true">
+      <div class="splash-wordmark">
+        <img src="./assets/blogy-title-mark.png" width="544" height="223" alt="">
+      </div>
+    </div>
+
+    <header class="app-header">
+      <div class="brand-lockup">
+        <h1 class="wordmark" aria-label="BLOGY">
+          <img class="wordmark-img" src="./assets/blogy-title-mark.png" width="544" height="223" alt="BLOGY">
+        </h1>
+      </div>
+      <div class="header-actions">
+        <button class="ghost-button" id="copyHtmlButton" type="button" disabled>HTML 복사</button>
+        <button class="primary-button" id="copyRichButton" type="button" disabled>블로그용 복사</button>
+      </div>
+    </header>
+
+    <main class="app-shell">
+      <aside class="input-panel" aria-label="입력">
+        <section class="panel-section" data-step="01">
+          <div class="section-heading">
+            <h2>무료 AI 설정</h2>
+            <span id="apiModeLabel" hidden>Gemini 권장</span>
+          </div>
+          <div class="field-grid two">
+            <label>
+              분석 방식
+              <select id="providerSelect">
+                <option value="gemini">Gemini 무료 티어</option>
+              </select>
+            </label>
+            <label>
+              모델
+              <input id="geminiModel" value="gemini-2.5-flash" autocomplete="off">
+            </label>
+          </div>
+          <label>
+            Gemini API Key
+            <input id="geminiKey" type="password" autocomplete="off">
+          </label>
+          <div class="button-row">
+            <button class="secondary-button" id="saveSettingsButton" type="button">설정 저장</button>
+            <a class="text-link" href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer">무료 키 만들기</a>
+          </div>
+          <p class="hint">키는 이 브라우저의 localStorage에만 저장됩니다. 무료 티어에서는 Google 정책상 입력 데이터가 제품 개선에 사용될 수 있습니다.</p>
+        </section>
+
+        <section class="panel-section" data-step="02">
+          <div class="section-heading">
+            <h2>사진</h2>
+            <span id="photoCount" hidden>0장</span>
+          </div>
+          <div class="dropzone" id="dropzone" tabindex="0" role="button" aria-label="사진 업로드">
+            <input id="photoInput" type="file" accept="image/*" multiple>
+            <strong>이미지 업로드</strong>
+            <span>JPG, PNG, WebP 여러 장 가능</span>
+          </div>
+          <p class="upload-status" id="uploadStatus">선택된 사진 없음</p>
+          <div class="photo-grid" id="photoGrid" aria-live="polite"></div>
+        </section>
+
+        <section class="panel-section" data-step="03">
+          <div class="section-heading">
+            <h2>글 방향</h2>
+          </div>
+          <label>
+            원하는 글 프롬프트
+            <textarea id="userPrompt" rows="5"></textarea>
+          </label>
+          <div class="field-grid two">
+            <label>
+              톤
+              <select id="toneSelect">
+                <option value="담백하고 신뢰감 있게">담백하고 신뢰감 있게</option>
+                <option value="따뜻한 후기체">따뜻한 후기체</option>
+                <option value="전문적인 정보형">전문적인 정보형</option>
+                <option value="가볍고 생생하게">가볍고 생생하게</option>
+              </select>
+            </label>
+            <label>
+              플랫폼
+              <select id="platformSelect">
+                <option value="naver">네이버 블로그</option>
+                <option value="tistory">티스토리</option>
+                <option value="wordpress">워드프레스</option>
+                <option value="generic">일반 HTML</option>
+              </select>
+            </label>
+          </div>
+          <div class="field-grid two">
+            <label>
+              꼭 넣을 키워드
+              <input id="keywordInput">
+            </label>
+            <label>
+              해시태그 개수
+              <input id="hashtagCount" type="number" min="0" max="30" value="8">
+            </label>
+          </div>
+        </section>
+
+        <section class="panel-section" data-step="04">
+          <div class="section-heading">
+            <h2>레퍼런스</h2>
+          </div>
+          <label>
+            참고할 블로그 글
+            <textarea id="referenceText" rows="10"></textarea>
+          </label>
+          <label>
+            레퍼런스 반영 강도
+            <select id="referenceWeight">
+              <option value="strict" selected>엄격 - 제목 형식과 말투까지 맞춤</option>
+              <option value="high">높음 - 구조와 문체를 우선 반영</option>
+              <option value="balanced">보통 - 주제와 톤만 참고</option>
+            </select>
+          </label>
+          <button class="primary-button full" id="generateButton" type="button">작성하기</button>
+        </section>
+      </aside>
+
+      <section class="workspace" aria-label="작업 결과">
+        <div class="workspace-toolbar">
+          <div>
+            <p class="result-title">결과</p>
+          </div>
+          <div class="view-tabs" role="tablist">
+            <button class="tab active" data-view="preview" type="button">미리보기</button>
+            <button class="tab" data-view="matching" type="button">사진 배치</button>
+            <button class="tab" data-view="html" type="button">HTML</button>
+          </div>
+        </div>
+
+        <div class="progress-panel hidden" id="progressPanel">
+          <div class="progress-line"><span id="progressText">준비 중</span><strong id="progressPercent">0%</strong></div>
+          <div class="progress-bar"><span id="progressBar"></span></div>
+        </div>
+
+        <section class="result-view active" id="previewView">
+          <div class="preview-controls">
+            <div class="width-tabs" role="tablist">
+              <button class="width-tab active" data-width="pc" type="button">웹(PC)</button>
+              <button class="width-tab" data-width="mobile" type="button">모바일</button>
+            </div>
+          </div>
+          <div class="preview-stage">
+            <div class="preview-page" id="previewPage" data-width="pc">
+              <div class="seo-strip hidden" id="seoStrip"></div>
+              <article class="blog-preview" id="blogPreview" contenteditable="true" spellcheck="false"></article>
+            </div>
+          </div>
+        </section>
+
+        <section class="result-view" id="matchingView">
+          <div class="quality-grid" id="qualityGrid"></div>
+          <div class="match-list" id="matchList"></div>
+        </section>
+
+        <section class="result-view" id="htmlView">
+          <textarea id="htmlOutput" spellcheck="false" readonly></textarea>
+          <div class="button-row">
+            <button class="secondary-button" id="copyTextButton" type="button" disabled>텍스트만 복사</button>
+            <button class="secondary-button" id="downloadButton" type="button" disabled>HTML 파일 저장</button>
+          </div>
+        </section>
+      </section>
+    </main>
+
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+    <script src="./app.js?v=26" defer></script>
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          Promise.all([
+            navigator.serviceWorker.getRegistrations().then((registrations) =>
+              Promise.all(registrations.map((registration) => registration.unregister()))
+            ),
+            window.caches
+              ? caches.keys().then((keys) => Promise.all(keys.map((key) => caches.delete(key))))
+              : Promise.resolve()
+          ]).then(() => {
+            if (navigator.serviceWorker.controller && sessionStorage.getItem("blogyFreshReload") !== "1") {
+              sessionStorage.setItem("blogyFreshReload", "1");
+              window.location.reload();
+            }
+          }).catch(() => {});
+        });
+      }
+    </script>
+  </body>
+</html>
