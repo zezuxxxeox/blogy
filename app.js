@@ -25,8 +25,10 @@ const state = {
     geminiModel: "gemini-2.5-flash",
     geminiKey: "",
     noReference: false,
-    searchGrounding: true,
+    usePlaceSearch: true,
     wordCount: 1800,
+    wordCountMode: "1800",
+    customWordCount: 1800,
     placeName: "",
     verifiedFacts: "",
     referenceWeight: "strict",
@@ -102,12 +104,21 @@ function bindEvents() {
   });
 
   $("#searchGroundingToggle").addEventListener("change", () => {
-    state.settings.searchGrounding = $("#searchGroundingToggle").checked;
+    state.settings.usePlaceSearch = $("#searchGroundingToggle").checked;
     saveSettings();
   });
 
   $("#wordCountSelect").addEventListener("change", () => {
+    updateWordCountControls();
     state.settings.wordCount = parseTargetWordCount();
+    state.settings.wordCountMode = $("#wordCountSelect").value;
+    saveSettings();
+  });
+
+  $("#customWordCount").addEventListener("input", () => {
+    state.settings.customWordCount = parseCustomWordCount();
+    state.settings.wordCount = parseTargetWordCount();
+    $("#customWordCount").value = String(state.settings.customWordCount);
     saveSettings();
   });
 
@@ -162,8 +173,10 @@ function persistSettingsFromControls(showMessage = false) {
   state.settings.geminiKey = $("#geminiKey").value.trim();
   state.settings.geminiModel = $("#geminiModel").value.trim() || "gemini-2.5-flash";
   state.settings.noReference = $("#noReferenceToggle").checked;
-  state.settings.searchGrounding = $("#searchGroundingToggle").checked;
+  state.settings.usePlaceSearch = $("#searchGroundingToggle").checked;
   state.settings.wordCount = parseTargetWordCount();
+  state.settings.wordCountMode = $("#wordCountSelect").value;
+  state.settings.customWordCount = parseCustomWordCount();
   state.settings.placeName = $("#placeName").value.trim();
   state.settings.verifiedFacts = $("#verifiedFacts").value.trim();
   state.settings.referenceWeight = $("#referenceWeight").value;
@@ -181,14 +194,19 @@ function hydrateSettings() {
   $("#geminiKey").value = state.settings.geminiKey;
   $("#geminiModel").value = state.settings.geminiModel;
   $("#noReferenceToggle").checked = Boolean(state.settings.noReference);
-  $("#searchGroundingToggle").checked = state.settings.searchGrounding !== false;
-  $("#wordCountSelect").value = String(state.settings.wordCount || 1800);
+  $("#searchGroundingToggle").checked = state.settings.usePlaceSearch !== false;
+  const savedWordCount = String(state.settings.wordCount || 1800);
+  const presetValues = ["1200", "1800", "2500", "3500"];
+  $("#wordCountSelect").value = state.settings.wordCountMode || (presetValues.includes(savedWordCount) ? savedWordCount : "custom");
+  if (!$("#wordCountSelect").value) $("#wordCountSelect").value = "1800";
+  $("#customWordCount").value = String(state.settings.customWordCount || state.settings.wordCount || 1800);
   $("#placeName").value = state.settings.placeName || "";
   $("#verifiedFacts").value = state.settings.verifiedFacts || "";
   $("#referenceWeight").value = state.settings.referenceWeight || "strict";
   $("#hashtagCount").value = String(state.settings.hashtagCount ?? 8);
   $("#keywordInput").value = state.settings.keywords || "";
   updateReferenceControls();
+  updateWordCountControls();
   updateMapSearchLink();
 }
 
@@ -464,8 +482,19 @@ function parseHashtagCount() {
 }
 
 function parseTargetWordCount() {
-  const raw = Number.parseInt($("#wordCountSelect")?.value || "1800", 10);
+  const selected = $("#wordCountSelect")?.value || "1800";
+  const raw = selected === "custom" ? parseCustomWordCount() : Number.parseInt(selected, 10);
   return clamp(Number.isFinite(raw) ? raw : 1800, 800, 5000);
+}
+
+function parseCustomWordCount() {
+  const raw = Number.parseInt($("#customWordCount")?.value || "1800", 10);
+  return clamp(Number.isFinite(raw) ? raw : 1800, 800, 5000);
+}
+
+function updateWordCountControls() {
+  const isCustom = $("#wordCountSelect")?.value === "custom";
+  $("#customWordCountLabel")?.classList.toggle("hidden", !isCustom);
 }
 
 function renderPhotos() {
@@ -610,7 +639,7 @@ function collectBrief() {
     targetWordCount,
     placeName: $("#placeName").value.trim(),
     verifiedFacts: $("#verifiedFacts").value.trim(),
-    searchGrounding: $("#searchGroundingToggle").checked,
+    usePlaceSearch: $("#searchGroundingToggle").checked,
     keywords: rawKeywords.map((keyword) => normalizeDictationText(keyword, contextTerms)).filter(Boolean),
     dictationProfile,
     sectionCount,
@@ -650,13 +679,13 @@ async function generateWithGemini(brief) {
   const requestBody = {
     contents: [{ role: "user", parts }],
     generationConfig: {
-      temperature: brief.searchGrounding ? 0.38 : 0.62,
+      temperature: brief.usePlaceSearch ? 0.38 : 0.62,
       topP: 0.82,
       responseMimeType: "application/json"
     }
   };
 
-  if (brief.searchGrounding) {
+  if (brief.usePlaceSearch) {
     requestBody.tools = [{ googleSearch: {} }];
   }
 
@@ -669,7 +698,7 @@ async function generateWithGemini(brief) {
   setProgress(true, "AI 결과를 정리하는 중", 72);
   if (!response.ok) {
     const text = await response.text();
-    if (brief.searchGrounding && response.status === 400) {
+    if (brief.usePlaceSearch && response.status === 400) {
       const fallbackBody = { ...requestBody };
       delete fallbackBody.tools;
       response = await fetch(endpoint, {
@@ -681,7 +710,7 @@ async function generateWithGemini(brief) {
         const retryText = await response.text();
         throw new Error(`Gemini API ${response.status}: ${retryText.slice(0, 220)}`);
       }
-      showToast("검색 확인이 지원되지 않아 검증 정보 기준으로 작성합니다.");
+      showToast("장소 검색이 지원되지 않아 입력 내용 기준으로 작성합니다.");
     } else {
       throw new Error(`Gemini API ${response.status}: ${text.slice(0, 220)}`);
     }
@@ -813,7 +842,7 @@ ${prompt || "(없음)"}
 해시태그 개수: ${brief.hashtagCount}
 목표 글자수: 약 ${brief.targetWordCount}자
 장소명: ${brief.placeName || "(없음)"}
-검증된 메뉴·가격·운영정보:
+장소 메모:
 ${brief.verifiedFacts || "(없음)"}
 필수 키워드: ${brief.keywords.join(", ") || "(없음)"}
 마무리 방식: 별도 CTA 없이 레퍼런스의 결말 흐름을 자연스럽게 반영
@@ -839,14 +868,14 @@ ${rawRef || "(없음)"}
 }
 
 function buildFactDirective(brief) {
-  const searchMode = brief.searchGrounding
-    ? "Google Search grounding is enabled. Search with exact Korean keywords built from the neighborhood/dong, place name, menu, price, hours, address, Naver Map, and recent blog-review terms."
-    : "Search grounding is disabled. Use only user-provided verified facts, photos, and reference text.";
+  const searchMode = brief.usePlaceSearch
+    ? "Place search is enabled. Use Google Search grounding with exact Korean keywords built from the neighborhood/dong, place name, menu, price, hours, address, Naver Map, and recent blog-review terms."
+    : "Place search is disabled. Use only the user's place memo, photos, prompt, and reference text.";
   return `
 [FACT SAFETY RULES]
 ${searchMode}
 - This is likely an informational blog post. Minimize hallucination.
-- If the topic is a restaurant, cafe, shop, clinic, product, price, menu, operating hour, address, parking, reservation, or policy, use only facts found in verifiedFacts, the user's reference text, visible photo evidence, or grounded search results.
+- If the topic is a restaurant, cafe, shop, clinic, product, price, menu, operating hour, address, parking, reservation, or policy, use only facts found in the user's place memo, reference text, visible photo evidence, or grounded search results.
 - Never invent menu names, prices, addresses, phone numbers, opening hours, parking rules, reservation rules, brand history, awards, or promotions.
 - If a fact is not verified, omit it or write in Korean that it should be checked before visiting. Do not fill blanks with plausible guesses.
 - Use the place name as the main search keyword when available: "${brief.placeName || ""}". If it contains a neighborhood/dong and shop name, treat that full string as the exact primary query.

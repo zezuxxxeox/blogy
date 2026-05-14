@@ -317,18 +317,31 @@ select:focus {
   margin: 8px 0 0;
   color: var(--muted);
   font-size: clamp(9px, 2.75vw, 12px);
-  line-height: 1.2;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.45;
+}
+
+.notice-toggle {
+  margin: 8px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.notice-toggle summary {
+  width: fit-content;
+  color: var(--ink);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.notice-toggle p {
+  margin: 7px 0 0;
 }
 
 .upload-status {
-  overflow: hidden;
   font-size: clamp(9px, 3vw, 12px);
-  line-height: 1.2;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.35;
 }
 
 .dropzone {
@@ -703,17 +716,19 @@ select:focus {
   right: 18px;
   bottom: 18px;
   z-index: 50;
-  max-width: min(420px, calc(100vw - 36px));
-  padding: 12px 14px;
+  max-width: min(520px, calc(100vw - 28px));
+  padding: 12px 18px;
   border-radius: 8px;
   background: #17212b;
   color: white;
-  font-size: clamp(11px, 3.5vw, 16px);
+  display: -webkit-box;
+  font-size: clamp(11px, 2.8vw, 14px);
   font-weight: 800;
-  line-height: 1.2;
+  line-height: 1.32;
   overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
   opacity: 0;
   transform: translateY(12px);
   pointer-events: none;
