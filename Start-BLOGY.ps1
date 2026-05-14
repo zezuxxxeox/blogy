@@ -29,7 +29,7 @@ function Test-BlogyServer {
   }
 }
 
-function Stop-StaleBlogyServer {
+function Stop-BlogyServerOnPort {
   try {
     $connection = Get-NetTCPConnection -LocalPort 5174 -State Listen -ErrorAction SilentlyContinue | Select-Object -First 1
     if ($connection -and $connection.OwningProcess) {
@@ -82,26 +82,12 @@ function Get-EdgePath {
   return $null
 }
 
-function Start-BlogyAppWindow {
-  $cacheBust = [DateTimeOffset]::Now.ToUnixTimeSeconds()
-  $appUrl = "$Url/?v=$cacheBust"
-  $edgePath = Get-EdgePath
+function Start-BlogyServer {
+  Stop-BlogyServerOnPort
 
-  if ($edgePath) {
-    Start-Process `
-      -FilePath $edgePath `
-      -ArgumentList @("--app=$appUrl", "--new-window")
-    return
-  }
-
-  Start-Process $appUrl
-}
-
-if (-not (Test-BlogyServer)) {
-  Stop-StaleBlogyServer
   $nodePath = Get-NodePath
   if (-not $nodePath) {
-    Show-BlogyMessage "BLOGY를 실행하려면 Node.js가 필요합니다.`nNode.js 설치 후 다시 실행해주세요.`nhttps://nodejs.org" 16
+    Show-BlogyMessage "BLOGY needs Node.js to run.`nInstall Node.js, then open BLOGY again.`nhttps://nodejs.org" 16
     exit 1
   }
 
@@ -116,15 +102,34 @@ if (-not (Test-BlogyServer)) {
   $deadline = (Get-Date).AddSeconds(10)
   while ((Get-Date) -lt $deadline) {
     if (Test-BlogyServer) {
-      break
+      return
     }
     Start-Sleep -Milliseconds 350
   }
 }
 
+function Start-BlogyAppWindow {
+  $cacheBust = [DateTimeOffset]::Now.ToUnixTimeSeconds()
+  $appUrl = "$Url/?v=$cacheBust"
+  $edgePath = Get-EdgePath
+
+  if ($edgePath) {
+    return Start-Process `
+      -FilePath $edgePath `
+      -ArgumentList @("--app=$appUrl", "--new-window") `
+      -PassThru
+  }
+
+  return Start-Process $appUrl -PassThru
+}
+
 if (-not (Test-BlogyServer)) {
-  Show-BlogyMessage "BLOGY 서버를 시작하지 못했습니다.`n프로젝트 폴더의 .server.err.log를 확인해주세요." 16
+  Start-BlogyServer
+}
+
+if (-not (Test-BlogyServer)) {
+  Show-BlogyMessage "BLOGY server could not start.`nCheck .server.err.log in the project folder." 16
   exit 1
 }
 
-Start-BlogyAppWindow
+Start-BlogyAppWindow | Out-Null

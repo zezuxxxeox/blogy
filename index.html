@@ -188,6 +188,20 @@
     <div class="toast" id="toast" role="status" aria-live="polite"></div>
     <script src="./app.js?v=26" defer></script>
     <script>
+      (() => {
+        const heartbeat = () => {
+          fetch("/__heartbeat", {
+            method: "POST",
+            cache: "no-store",
+            keepalive: true
+          }).catch(() => {});
+        };
+
+        heartbeat();
+        window.setInterval(heartbeat, 3000);
+      })();
+    </script>
+    <script>
       if ("serviceWorker" in navigator) {
         window.addEventListener("load", () => {
           Promise.all([
