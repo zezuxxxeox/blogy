@@ -268,7 +268,6 @@ textarea::-webkit-scrollbar-thumb {
 .input-panel .panel-section[data-step="03"],
 .input-panel .panel-section[data-step="04"] {
   background: #ffffff;
-  box-shadow: inset 3px 0 0 #111111;
 }
 
 .workspace {
