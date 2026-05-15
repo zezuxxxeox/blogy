@@ -5,6 +5,9 @@ const STORAGE_KEY = "easy-posting-settings";
 const MAX_API_IMAGES = 12;
 const MIN_AUTO_SECTIONS = 3;
 const MAX_AUTO_SECTIONS = 9;
+const CLIPBOARD_IMAGE_MAX_SIDE = 900;
+const CLIPBOARD_IMAGE_QUALITY = 0.78;
+const SINGLE_IMAGE_COPY_MAX_SIDE = 1200;
 
 // 플랫폼별 PC 본문 가로폭(px). 네이버 블로그 본문은 693px 기준이다.
 const PLATFORM_PREVIEW_WIDTH = {
@@ -807,19 +810,29 @@ function buildReferenceCollectionTargets(rawUrl) {
   if (host === "blog.naver.com" || host === "m.blog.naver.com") {
     const identity = getNaverBlogPostIdentity(rawUrl);
     const blogId = identity?.blogId || url.searchParams.get("blogId");
-    const categoryNo = url.searchParams.get("categoryNo");
+    const categoryNo = getNaverCategoryNo(url);
     if (blogId) {
       const id = encodeURIComponent(blogId);
-      const categoryQuery = categoryNo ? `&categoryNo=${encodeURIComponent(categoryNo)}` : "";
+      const categoryValue = categoryNo || "0";
+      const categoryQuery = `&categoryNo=${encodeURIComponent(categoryValue)}`;
       targets.push(
-        `https://m.blog.naver.com/PostList.naver?blogId=${id}${categoryQuery}`,
-        `https://blog.naver.com/PostList.naver?blogId=${id}${categoryQuery}`,
+        `https://m.blog.naver.com/PostList.naver?blogId=${id}${categoryQuery}&currentPage=1`,
+        `https://blog.naver.com/PostList.naver?blogId=${id}&from=postList${categoryQuery}&currentPage=1`,
+        `https://blog.naver.com/PostTitleListAsync.naver?blogId=${id}&viewdate=&currentPage=1${categoryQuery}&parentCategoryNo=&countPerPage=30`,
+        `https://m.blog.naver.com/api/blogs/${id}/post-list?categoryNo=${encodeURIComponent(categoryValue)}&itemCount=24&page=1`,
         `https://m.blog.naver.com/${id}${categoryNo ? `?categoryNo=${encodeURIComponent(categoryNo)}` : ""}`,
         `https://blog.naver.com/${id}${categoryNo ? `?categoryNo=${encodeURIComponent(categoryNo)}` : ""}`
       );
     }
   }
   return unique(targets);
+}
+
+function getNaverCategoryNo(url) {
+  return url.searchParams.get("categoryNo")
+    || url.searchParams.get("category")
+    || url.searchParams.get("parentCategoryNo")
+    || "";
 }
 
 function extractPostLinksFromListHtml(html, fetchedUrl, originalUrl) {
@@ -834,11 +847,13 @@ function extractPostLinksFromListHtml(html, fetchedUrl, originalUrl) {
   });
 
   const normalizedHtml = html
+    .replace(/\\\//g, "/")
     .replace(/\\u002F/g, "/")
     .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"");
+    .replace(/&quot;/g, "\"")
+    .replace(/\\"/g, "\"");
   const blogId = originalIdentity?.blogId;
-  const logNoMatches = normalizedHtml.matchAll(/(?:logNo=|logNo["']?\s*:\s*["']?)(\d{5,})/g);
+  const logNoMatches = normalizedHtml.matchAll(/(?:logNo=|logNo["']?\s*:\s*["']?|postId["']?\s*:\s*["']?|id["']?\s*:\s*["']?)(\d{5,})/g);
   for (const match of logNoMatches) {
     if (blogId) links.push(`https://m.blog.naver.com/PostView.naver?blogId=${encodeURIComponent(blogId)}&logNo=${match[1]}`);
   }
@@ -2967,29 +2982,8 @@ function applyPreviewWidth() {
 async function copyRichHtml() {
   ensurePreviewHtml();
 
-  const platform = $("#platformSelect")?.value || "naver";
-  if (platform === "naver") {
-    try {
-      if (await copyRenderedPreviewWithBlobImages()) {
-        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
-        return;
-      }
-    } catch (error) {
-      console.warn("Blob rendered copy failed", error);
-    }
-
-    try {
-      if (copyRenderedPreview()) {
-        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
-        return;
-      }
-    } catch (error) {
-      console.warn("Rendered copy failed", error);
-    }
-  }
-
-  // 네이버 에디터는 붙여넣기 HTML 안의 data: 이미지가 너무 크면 "지원하지 않는 형식"으로 막는다.
-  // 그래서 복사할 때 사진을 네이버 본문 폭에 맞게 줄여서 함께 넣어 붙여넣기 성공률을 높인다.
+  // 블로그 에디터에 넘길 때는 원본 data: 이미지를 그대로 넣지 않고,
+  // 본문 폭에 맞춘 축소본을 HTML 클립보드에 먼저 담는다.
   let html = "";
   try {
     html = await buildCopyHtml();
@@ -3012,6 +3006,27 @@ async function copyRichHtml() {
     }
   } catch (error) {
     console.warn("ClipboardItem copy failed", error);
+  }
+
+  const platform = $("#platformSelect")?.value || "naver";
+  if (platform === "naver") {
+    try {
+      if (await copyRenderedPreviewWithBlobImages()) {
+        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
+        return;
+      }
+    } catch (error) {
+      console.warn("Blob rendered copy failed", error);
+    }
+
+    try {
+      if (copyRenderedPreview()) {
+        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
+        return;
+      }
+    } catch (error) {
+      console.warn("Rendered copy failed", error);
+    }
   }
 
   try {
@@ -3037,7 +3052,13 @@ async function buildCopyHtml() {
     const img = figure.querySelector("img");
     if (!photo || !img) continue;
     try {
-      img.setAttribute("src", await getClipboardImageUrl(photo));
+      const imageData = await getClipboardImageData(photo);
+      img.setAttribute("src", imageData.dataUrl);
+      img.setAttribute("width", String(imageData.width));
+      img.setAttribute("height", String(imageData.height));
+      img.style.maxWidth = "100%";
+      img.style.height = "auto";
+      img.style.display = "block";
     } catch (error) {
       console.warn("clipboard image resize failed", error);
     }
@@ -3046,15 +3067,14 @@ async function buildCopyHtml() {
 }
 
 // 붙여넣기용 축소 이미지(네이버 본문 폭 기준). 사진별로 한 번만 만들고 재사용한다.
-function getClipboardImageUrl(photo) {
-  if (photo.clipboardDataUrl) return Promise.resolve(photo.clipboardDataUrl);
+function getClipboardImageData(photo) {
+  if (photo.clipboardImageData) return Promise.resolve(photo.clipboardImageData);
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
-      const maxSide = 900;
       const sourceWidth = image.naturalWidth || image.width;
       const sourceHeight = image.naturalHeight || image.height;
-      const ratio = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+      const ratio = Math.min(1, CLIPBOARD_IMAGE_MAX_SIDE / Math.max(sourceWidth, sourceHeight));
       const width = Math.max(1, Math.round(sourceWidth * ratio));
       const height = Math.max(1, Math.round(sourceHeight * ratio));
       const canvas = document.createElement("canvas");
@@ -3064,8 +3084,12 @@ function getClipboardImageUrl(photo) {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(image, 0, 0, width, height);
-      photo.clipboardDataUrl = canvas.toDataURL("image/jpeg", 0.78);
-      resolve(photo.clipboardDataUrl);
+      photo.clipboardImageData = {
+        dataUrl: canvas.toDataURL("image/jpeg", CLIPBOARD_IMAGE_QUALITY),
+        width,
+        height
+      };
+      resolve(photo.clipboardImageData);
     };
     image.onerror = () => reject(new Error("image load failed"));
     image.src = photo.exportDataUrl;
@@ -3082,7 +3106,7 @@ async function copyPhotoImage(photoId) {
     if (!navigator.clipboard?.write || !window.ClipboardItem) {
       throw new Error("clipboard image unsupported");
     }
-    const blob = await dataUrlToPngBlob(photo.exportDataUrl);
+    const blob = await dataUrlToPngBlob(photo.exportDataUrl, SINGLE_IMAGE_COPY_MAX_SIDE);
     await navigator.clipboard.write([new ClipboardItem({ "image/png": blob })]);
     showToast("이미지를 복사했습니다. 네이버 에디터에서 붙여넣으세요.");
   } catch (error) {
@@ -3091,15 +3115,20 @@ async function copyPhotoImage(photoId) {
   }
 }
 
-function dataUrlToPngBlob(dataUrl) {
+function dataUrlToPngBlob(dataUrl, maxSide = Infinity) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
+      const sourceWidth = image.naturalWidth || image.width;
+      const sourceHeight = image.naturalHeight || image.height;
+      const ratio = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
+      const width = Math.max(1, Math.round(sourceWidth * ratio));
+      const height = Math.max(1, Math.round(sourceHeight * ratio));
       const canvas = document.createElement("canvas");
-      canvas.width = image.naturalWidth || image.width;
-      canvas.height = image.naturalHeight || image.height;
+      canvas.width = width;
+      canvas.height = height;
       const ctx = canvas.getContext("2d");
-      ctx.drawImage(image, 0, 0);
+      ctx.drawImage(image, 0, 0, width, height);
       canvas.toBlob((blob) => {
         if (blob) resolve(blob);
         else reject(new Error("toBlob failed"));
@@ -3168,10 +3197,15 @@ async function copyRenderedPreviewWithBlobImages() {
       const photo = getReadyPhotos().find((item) => item.id === figure.getAttribute("data-blogy-photo"));
       const img = figure.querySelector("img");
       if (!photo || !img || !photo.exportDataUrl) continue;
-      const blob = await dataUrlToJpegBlob(photo.exportDataUrl, 0.86);
+      const imageData = await getClipboardImageData(photo);
+      const blob = await dataUrlToJpegBlob(imageData.dataUrl, 0.86);
       const url = URL.createObjectURL(blob);
       objectUrls.push(url);
       img.setAttribute("src", url);
+      img.setAttribute("width", String(imageData.width));
+      img.setAttribute("height", String(imageData.height));
+      img.style.maxWidth = "100%";
+      img.style.height = "auto";
     }
 
     document.body.appendChild(clone);
