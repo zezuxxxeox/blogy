@@ -2455,7 +2455,7 @@ function normalizeResult() {
   state.result.photoInsights = readyPhotos.map((photo) => insightsById.get(photo.id));
   state.result.photoInsights.forEach((insight) => {
     if (!insight) return;
-    insight.captionKo = removeReferenceLeakMarkers(insight.captionKo || "");
+    insight.captionKo = normalizeCaptionCandidate(insight.captionKo || "", readyPhotos.find((photo) => photo.id === insight.photoId)) || "";
     insight.contextBridge = removeReferenceLeakMarkers(insight.contextBridge || "");
     insight.avoidReason = removeReferenceLeakMarkers(insight.avoidReason || "");
   });
@@ -2488,7 +2488,7 @@ function normalizeResult() {
   readyPhotos.forEach((photo) => {
     const containing = state.result.sections.find((section) => section.targetPhotoIds.includes(photo.id));
     photo.matchedSectionId = containing?.id || "";
-    photo.caption = removeReferenceLeakMarkers(photo.caption || photo.name);
+    photo.caption = buildSmartPhotoCaption(photo, containing || null, insightsById.get(photo.id)) || "";
     photo.keywords = insightsById.get(photo.id)?.visualKeywords || [];
   });
 
@@ -2778,11 +2778,11 @@ function buildBlogHtml() {
       const photo = getReadyPhotos().find((item) => item.id === photoId);
       const insight = state.result.photoInsights.find((item) => item.photoId === photoId);
       if (!photo || !photo.exportDataUrl) return "";
-      const caption = buildContextualPhotoCaption(photo, section, insight);
+      const caption = buildSmartPhotoCaption(photo, section, insight);
       const captionHtml = caption ? `<figcaption>${escapeHtml(caption)}</figcaption>` : "";
       return `
         <figure data-blogy-photo="${escapeAttr(photoId)}">
-          <img src="${photo.exportDataUrl}" alt="${escapeAttr(section.altText || caption || photo.name)}">
+          <img src="${photo.exportDataUrl}" alt="${escapeAttr(section.altText || caption || "photo")}">
           ${captionHtml}
         </figure>
       `;
@@ -2801,6 +2801,72 @@ function buildBlogHtml() {
     ${hashtags}
     ${body}
   `.trim();
+}
+
+function buildSmartPhotoCaption(photo, section, insight = null) {
+  const candidates = [
+    photo.note,
+    insight?.captionKo,
+    insight?.contextBridge,
+    section?.altText,
+    section?.title
+  ];
+
+  for (const candidate of candidates) {
+    const caption = normalizeCaptionCandidate(candidate, photo);
+    if (caption) return caption;
+  }
+
+  const tags = [
+    ...(insight?.visualKeywords || []),
+    ...(photo.visualTags || []),
+    ...(section?.keywordAnchors || [])
+  ];
+  const keywords = unique(tags.map((tag) => normalizeCaptionCandidate(tag, photo)).filter(Boolean));
+  if (keywords.length >= 2) return clampCaption(`${keywords[0]} ${keywords[1]}`);
+  if (keywords.length === 1) return clampCaption(`${keywords[0]} 사진`);
+
+  return "";
+}
+
+function normalizeCaptionCandidate(value, photo = null) {
+  let text = removeReferenceLeakMarkers(value || "")
+    .replace(/\.[a-z0-9]{2,5}\b/gi, " ")
+    .replace(/[_-]+/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (!text) return "";
+
+  text = text
+    .split(/[.!?\n\r。！？]|(?:\s{2,})/)
+    .map((item) => item.trim())
+    .find(Boolean) || "";
+  text = text
+    .replace(/^사진\s*(?:속|에서|에는|은|는|이|가)?\s*/i, "")
+    .replace(/^(?:이미지|장면)\s*(?:속|에서|에는|은|는|이|가)?\s*/i, "")
+    .replace(/\s*(?:관련\s*)?(?:사진|이미지)$/i, "")
+    .trim();
+
+  const baseName = (photo?.name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().toLowerCase();
+  const comparable = text.toLowerCase();
+  if (baseName && comparable === baseName) return "";
+  if (/^(?:img|dsc|pxl|kakao|screenshot|photo|image|capture)[\s\d-]*$/i.test(text)) return "";
+  if (/^\d+$/.test(text)) return "";
+  if (text.length < 2) return "";
+  return clampCaption(text);
+}
+
+function clampCaption(text) {
+  const clean = (text || "").replace(/\s+/g, " ").trim();
+  if (clean.length <= 20) return clean;
+  const words = clean.split(" ");
+  let result = "";
+  for (const word of words) {
+    const next = result ? `${result} ${word}` : word;
+    if (next.length > 20) break;
+    result = next;
+  }
+  return result || clean.slice(0, 20).trim();
 }
 
 function buildContextualPhotoCaption(photo, section, insight = null) {
@@ -2895,6 +2961,18 @@ async function copyRichHtml() {
     html = $("#blogPreview").innerHTML || buildBlogHtml();
   }
   const plain = htmlToPlainText(html);
+  const platform = $("#platformSelect")?.value || "naver";
+
+  if (platform === "naver") {
+    try {
+      if (copyRenderedPreview()) {
+        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
+        return;
+      }
+    } catch (error) {
+      console.warn("Rendered copy failed", error);
+    }
+  }
 
   try {
     if (navigator.clipboard?.write && window.ClipboardItem) {
@@ -2948,7 +3026,7 @@ function getClipboardImageUrl(photo) {
   return new Promise((resolve, reject) => {
     const image = new Image();
     image.onload = () => {
-      const maxSide = 1200;
+      const maxSide = 900;
       const sourceWidth = image.naturalWidth || image.width;
       const sourceHeight = image.naturalHeight || image.height;
       const ratio = Math.min(1, maxSide / Math.max(sourceWidth, sourceHeight));
@@ -2961,7 +3039,7 @@ function getClipboardImageUrl(photo) {
       ctx.fillStyle = "#ffffff";
       ctx.fillRect(0, 0, width, height);
       ctx.drawImage(image, 0, 0, width, height);
-      photo.clipboardDataUrl = canvas.toDataURL("image/jpeg", 0.82);
+      photo.clipboardDataUrl = canvas.toDataURL("image/jpeg", 0.78);
       resolve(photo.clipboardDataUrl);
     };
     image.onerror = () => reject(new Error("image load failed"));
