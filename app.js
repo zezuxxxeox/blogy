@@ -2967,6 +2967,27 @@ function applyPreviewWidth() {
 async function copyRichHtml() {
   ensurePreviewHtml();
 
+  const platform = $("#platformSelect")?.value || "naver";
+  if (platform === "naver") {
+    try {
+      if (await copyRenderedPreviewWithBlobImages()) {
+        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
+        return;
+      }
+    } catch (error) {
+      console.warn("Blob rendered copy failed", error);
+    }
+
+    try {
+      if (copyRenderedPreview()) {
+        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
+        return;
+      }
+    } catch (error) {
+      console.warn("Rendered copy failed", error);
+    }
+  }
+
   // 네이버 에디터는 붙여넣기 HTML 안의 data: 이미지가 너무 크면 "지원하지 않는 형식"으로 막는다.
   // 그래서 복사할 때 사진을 네이버 본문 폭에 맞게 줄여서 함께 넣어 붙여넣기 성공률을 높인다.
   let html = "";
@@ -2977,18 +2998,6 @@ async function copyRichHtml() {
     html = $("#blogPreview").innerHTML || buildBlogHtml();
   }
   const plain = htmlToPlainText(html);
-  const platform = $("#platformSelect")?.value || "naver";
-
-  if (platform === "naver") {
-    try {
-      if (copyRenderedPreview()) {
-        showToast("글과 사진을 함께 복사했습니다. 네이버 에디터에 붙여넣으세요.");
-        return;
-      }
-    } catch (error) {
-      console.warn("Rendered copy failed", error);
-    }
-  }
 
   try {
     if (navigator.clipboard?.write && window.ClipboardItem) {
@@ -3137,6 +3146,81 @@ function copyRenderedPreview() {
   const copied = document.execCommand("copy");
   selection.removeAllRanges();
   return copied;
+}
+
+async function copyRenderedPreviewWithBlobImages() {
+  const preview = $("#blogPreview");
+  if (!preview.innerHTML.trim()) return false;
+
+  const clone = preview.cloneNode(true);
+  const objectUrls = [];
+  clone.style.position = "fixed";
+  clone.style.left = "-10000px";
+  clone.style.top = "0";
+  clone.style.width = `${PLATFORM_PREVIEW_WIDTH.naver}px`;
+  clone.style.background = "#ffffff";
+  clone.style.pointerEvents = "none";
+  clone.setAttribute("aria-hidden", "true");
+
+  try {
+    const figures = [...clone.querySelectorAll("figure[data-blogy-photo]")];
+    for (const figure of figures) {
+      const photo = getReadyPhotos().find((item) => item.id === figure.getAttribute("data-blogy-photo"));
+      const img = figure.querySelector("img");
+      if (!photo || !img || !photo.exportDataUrl) continue;
+      const blob = await dataUrlToJpegBlob(photo.exportDataUrl, 0.86);
+      const url = URL.createObjectURL(blob);
+      objectUrls.push(url);
+      img.setAttribute("src", url);
+    }
+
+    document.body.appendChild(clone);
+    await waitForImages(clone);
+
+    const selection = window.getSelection();
+    const range = document.createRange();
+    range.selectNodeContents(clone);
+    selection.removeAllRanges();
+    selection.addRange(range);
+    const copied = document.execCommand("copy");
+    selection.removeAllRanges();
+    return copied;
+  } finally {
+    clone.remove();
+    objectUrls.forEach((url) => URL.revokeObjectURL(url));
+  }
+}
+
+function waitForImages(root) {
+  const images = [...root.querySelectorAll("img")];
+  return Promise.all(images.map((image) => {
+    if (image.complete && image.naturalWidth > 0) return Promise.resolve();
+    return new Promise((resolve) => {
+      image.onload = () => resolve();
+      image.onerror = () => resolve();
+    });
+  }));
+}
+
+function dataUrlToJpegBlob(dataUrl, quality = 0.86) {
+  return new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => {
+      const canvas = document.createElement("canvas");
+      canvas.width = image.naturalWidth || image.width;
+      canvas.height = image.naturalHeight || image.height;
+      const ctx = canvas.getContext("2d", { alpha: false });
+      ctx.fillStyle = "#ffffff";
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      ctx.drawImage(image, 0, 0);
+      canvas.toBlob((blob) => {
+        if (blob) resolve(blob);
+        else reject(new Error("toBlob failed"));
+      }, "image/jpeg", quality);
+    };
+    image.onerror = () => reject(new Error("image load failed"));
+    image.src = dataUrl;
+  });
 }
 
 async function copyHtml() {
