@@ -885,8 +885,13 @@ function isSameReferencePostLink(rawUrl, originalIdentity, originalHost) {
 
 function getSingleReferenceUrl(value) {
   const trimmed = (value || "").trim();
-  const urlMatch = trimmed.match(/^https?:\/\/\S+$/i);
-  return urlMatch ? stripTrailingUrlPunctuation(urlMatch[0]) : "";
+  const exactMatch = trimmed.match(/^https?:\/\/\S+$/i);
+  if (exactMatch) return stripTrailingUrlPunctuation(exactMatch[0]);
+
+  const urls = getReferenceUrls(trimmed);
+  if (urls.length !== 1) return "";
+  const remaining = trimmed.replace(urls[0], "").replace(/[()[\]{}.,;:'"<>|\s-]/g, "");
+  return remaining ? "" : urls[0];
 }
 
 function getReferenceUrls(value) {
@@ -972,12 +977,13 @@ function extractReferenceFromHtml(html) {
 
   const titleSelectors = [
     ".se-title-text", ".se_title", ".se-module-text.se-title", ".pcol1", ".htitle",
-    ".tit_h3", ".se-fs-", "h1", "title"
+    ".tit_h3", ".se-fs-", ".post_title", ".blog2_post_title", "meta[property='og:title']",
+    "meta[name='title']", "h1", "title"
   ];
   let title = "";
   for (const selector of titleSelectors) {
     const node = doc.querySelector(selector);
-    const text = node && node.textContent.replace(/\s+/g, " ").trim();
+    const text = node && (node.getAttribute("content") || node.textContent || "").replace(/\s+/g, " ").trim();
     if (text && text.length >= 2) {
       title = text.replace(/\s*[:|｜-]\s*네이버\s*블로그\s*$/i, "").trim();
       break;
@@ -986,7 +992,8 @@ function extractReferenceFromHtml(html) {
 
   const bodySelectors = [
     ".se-main-container", "#postViewArea .se-main-container", "#postViewArea .post_ct",
-    ".post_ct", ".se_component_wrap", "#post-view", "#postListBody", "article", ".article", "#content-area"
+    ".post_ct", ".se_component_wrap", "#post-view", "#postListBody", "#postContent",
+    "#viewTypeSelector", ".blog2_post", ".post-view", "article", ".article", "#content-area"
   ];
   let bodyNode = null;
   for (const selector of bodySelectors) {
