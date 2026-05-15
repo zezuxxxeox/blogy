@@ -1313,7 +1313,10 @@ REFERENCE STYLE ONLY:
 - 같은 문장 또는 같은 구조의 문장을 반복하지 않는다. 각 섹션 첫 문장과 사진 연결 문장은 서로 다른 표현으로 쓴다.
 - 사진 묘사는 독립 캡션처럼 자세히 쓰지 않는다. 해당 섹션의 핵심 내용에 이어지는 짧은 단서만 한 번 자연스럽게 연결한다.
 - 사진을 설명문처럼 따로 묘사하지 말고, 사진에서 보이는 단서를 글의 주장/경험/동선에 자연스럽게 연결한다.
-- photoInsights.captionKo는 사진 매칭용 내부 메모다. draftHtml 본문에 직접 쓰거나 비슷한 문장으로 풀어 쓰지 않는다.
+- photoInsights.captionKo는 사진에 실제로 보이는 것만 짧게 묘사한 자연스러운 한국어 명사구다. 본문 내용, 섹션 제목, 후기 주장, 추측 정보를 억지로 넣지 않는다.
+- captionKo는 8~18자 정도로 완결된 표현을 쓴다. 파일명/확장자/IMG/DSC/스크린샷 번호/내부 표식은 금지한다. 잘라낸 듯 끝나는 문구는 금지한다.
+- captionKo는 너무 단답으로 쓰지 않는다. "음식", "사진", "공간"처럼 한 단어만 쓰지 말고 "정갈한 한상차림", "창가 쪽 좌석", "메뉴판 상세"처럼 보이는 대상이 드러나게 쓴다.
+- 사진이 불명확하거나 확신이 낮으면 captionKo를 빈 문자열로 둔다. 틀린 설명보다 없는 설명이 낫다.
 - draftHtml 안에서는 "사진에서 보이는..." 같은 캡션식 문장을 반복하지 말고, 해당 섹션의 이야기 속에서 사진이 뒷받침하는 포인트를 자연스럽게 풀어낸다.
 - 사용자의 프롬프트, 레퍼런스, 사진 메모는 음성 인식으로 입력되어 단어가 틀렸을 수 있다. 원문을 그대로 믿지 말고 문맥, 사진, 파일명, 레퍼런스 흐름을 함께 보고 의도한 단어로 보정한다.
 - 사진에서 보이는 대상과 rawUserNote가 충돌하면 사진과 normalizedUserNote를 우선 비교하고, 확실하지 않은 보정은 단정하지 않는다.
@@ -1358,7 +1361,7 @@ REFERENCE STYLE ONLY:
   "photoInsights": [
     {
       "photoId": "입력 photo id",
-      "captionKo": "사진 매칭용 내부 메모. draftHtml 본문에 직접 넣지 않는다",
+      "captionKo": "사진에 보이는 것만 쓴 8~18자 자연스러운 설명. 불확실하면 빈 문자열",
       "visualKeywords": ["키워드"],
       "mood": "분위기",
       "bestUse": "대표/도입/상세/증거/마무리 중 하나",
@@ -2516,6 +2519,13 @@ function normalizeResult() {
     section.targetPhotoIds = unique(section.targetPhotoIds).filter((id) => photoIds.has(id));
   });
 
+  readyPhotos.forEach((photo) => {
+    const section = state.result.sections.find((item) => item.targetPhotoIds.includes(photo.id));
+    const insight = insightsById.get(photo.id);
+    photo.caption = buildSmartPhotoCaption(photo, section || null, insight) || "";
+    if (insight) insight.captionKo = photo.caption;
+  });
+
   state.result.seo = {
     title: enforceSeoTitleFormat(removeReferenceLeakMarkers(state.result.seo?.title || makeLocalTitle(brief, extractKeywords(brief.prompt))), brief, extractKeywords(brief.prompt)),
     description: removeReferenceLeakMarkers(state.result.seo?.description || makeDescription(collectBrief(), extractKeywords(collectBrief().prompt))),
@@ -2734,12 +2744,13 @@ function renderMatching() {
     const section = getSectionForPhoto(photo.id);
     const insight = state.result.photoInsights.find((item) => item.photoId === photo.id);
     const confidence = estimateConfidence(photo, section, insight);
+    const displayCaption = buildSmartPhotoCaption(photo, section, insight) || "사진 설명 없음";
     return `
       <div class="match-row" data-photo-id="${escapeAttr(photo.id)}">
         <img src="${escapeAttr(photo.objectUrl)}" alt="${escapeAttr(photo.name)}">
         <div class="match-copy">
           <h3>사진 ${index + 1} · ${escapeHtml(photo.name)}</h3>
-          <p>${escapeHtml(insight?.captionKo || photo.caption || "사진 설명 없음")}</p>
+          <p>${escapeHtml(displayCaption)}</p>
           <div class="seo-tags">${(insight?.visualKeywords || photo.visualTags).slice(0, 8).map((tag) => `<span>${escapeHtml(tag)}</span>`).join("")}</div>
           <p><strong>배치:</strong> ${section ? escapeHtml(section.title) : "미배치"}</p>
           <p>${escapeHtml(section?.photoRationale || "사진이 어색하면 섹션을 직접 바꿔주세요.")}</p>
@@ -2812,11 +2823,8 @@ function buildBlogHtml() {
 
 function buildSmartPhotoCaption(photo, section, insight = null) {
   const candidates = [
-    photo.note,
     insight?.captionKo,
-    insight?.contextBridge,
-    section?.altText,
-    section?.title
+    photo.note
   ];
 
   for (const candidate of candidates) {
@@ -2824,20 +2832,13 @@ function buildSmartPhotoCaption(photo, section, insight = null) {
     if (caption) return caption;
   }
 
-  const tags = [
-    ...(insight?.visualKeywords || []),
-    ...(photo.visualTags || []),
-    ...(section?.keywordAnchors || [])
-  ];
-  const keywords = unique(tags.map((tag) => normalizeCaptionCandidate(tag, photo)).filter(Boolean));
-  if (keywords.length >= 2) return clampCaption(`${keywords[0]} ${keywords[1]}`);
-  if (keywords.length === 1) return clampCaption(`${keywords[0]} 사진`);
-
   return "";
 }
 
 function normalizeCaptionCandidate(value, photo = null) {
   let text = removeReferenceLeakMarkers(value || "")
+    .replace(/\[[^\]]+\]/g, " ")
+    .replace(/(?:제목|본문|레퍼런스|참고자료)\s*[:：]/gi, " ")
     .replace(/\.[a-z0-9]{2,5}\b/gi, " ")
     .replace(/[_-]+/g, " ")
     .replace(/\s+/g, " ")
@@ -2852,18 +2853,25 @@ function normalizeCaptionCandidate(value, photo = null) {
     .replace(/^사진\s*(?:속|에서|에는|은|는|이|가)?\s*/i, "")
     .replace(/^(?:이미지|장면)\s*(?:속|에서|에는|은|는|이|가)?\s*/i, "")
     .replace(/\s*(?:관련\s*)?(?:사진|이미지)$/i, "")
+    .replace(/\b(?:related|photo|image|caption|alt)\b/gi, " ")
+    .replace(/\s+/g, " ")
     .trim();
 
   const baseName = (photo?.name || "").replace(/\.[^.]+$/, "").replace(/[_-]+/g, " ").trim().toLowerCase();
   const comparable = text.toLowerCase();
   if (baseName && comparable === baseName) return "";
+  if (baseName && comparable.includes(baseName) && comparable.length <= baseName.length + 4) return "";
   if (/^(?:img|dsc|pxl|kakao|screenshot|photo|image|capture)[\s\d-]*$/i.test(text)) return "";
+  if (/^(?:본문|섹션|대표|상세|가로|세로|사진|이미지|관련|미배치)\s*(?:사진|이미지)?$/i.test(text)) return "";
+  if (/^(?:음식|메뉴|공간|사진|이미지|장면|외관|내부|실내|실외|좌석|자리|테이블|풍경|제품|상품|디테일|상세|입구|간판|건물|후기)$/.test(text)) return "";
   if (/^\d+$/.test(text)) return "";
+  if (/[은는이가을를]$/.test(text)) return "";
+  if (/(?:관련|대한|위한|좋은|있는|없는|보이는|나오는|느껴지는)$/.test(text)) return "";
   if (text.length < 2) return "";
-  return clampCaption(text);
+  return fitNaturalCaption(text);
 }
 
-function clampCaption(text) {
+function fitNaturalCaption(text) {
   const clean = (text || "").replace(/\s+/g, " ").trim();
   if (clean.length <= 20) return clean;
   const words = clean.split(" ");
@@ -2873,7 +2881,8 @@ function clampCaption(text) {
     if (next.length > 20) break;
     result = next;
   }
-  return result || clean.slice(0, 20).trim();
+  if (result && result.length >= 4 && !/[은는이가을를]$/.test(result)) return result;
+  return "";
 }
 
 function buildContextualPhotoCaption(photo, section, insight = null) {
